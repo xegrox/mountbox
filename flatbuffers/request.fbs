@@ -1,0 +1,27 @@
+table Fd {
+  id: string;
+}
+
+table Stat {
+  path: string;
+}
+
+table Fstat {
+  fd: Fd;
+}
+
+table Open {
+  path: string;
+}
+
+table Close {
+  fd: Fd;
+}
+
+union Operation { Stat, Fstat, Open, Close }
+
+table Request {
+  operation: Operation;
+}
+
+root_type Request;
