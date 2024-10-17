@@ -1,0 +1,23 @@
+enum FileType : byte { File, Directory, Link }
+
+table Stat {
+  type: FileType;
+  size: uint64;
+}
+
+table Fd {
+  id: string (required);
+}
+
+enum Error: byte {
+  Unknown
+}
+
+union Payload { Stat, Fd }
+
+table Response {
+  payload: Payload (required);
+  error: Error = null;
+}
+
+root_type Response;

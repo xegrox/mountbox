@@ -1,0 +1,32 @@
+table Fd {
+  id: string (required);
+}
+
+table Stat {
+  path: string (required);
+}
+
+table Fstat {
+  fd: Fd (required);
+}
+
+table Open {
+  path: string (required);
+}
+
+table Close {
+  fd: Fd (required);
+}
+
+table Read {
+  fd: Fd (required);
+  len: uint64;
+}
+
+union Operation { Stat, Fstat, Open, Close, Read }
+
+table Request {
+  operation: Operation (required);
+}
+
+root_type Request;
