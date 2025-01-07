@@ -4,3 +4,4 @@ pub mod stat;
 pub mod fstat;
 pub mod lstat;
 pub mod statx;
+pub mod getcwd;

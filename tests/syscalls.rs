@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::process::exit;
+use std::path::Path;
 use mountbox::fb;
 use mountbox::{state::State, sockets::Socket, ptrace, server, syscall_nr, fd_allocator::FdAllocator};
 use nix::libc;
-use nix::{libc::syscall, unistd::{fork, ForkResult}};
+use nix::unistd::{fork, ForkResult};
 use rusty_fork::rusty_fork_test;
 
 macro_rules! test_syscall {
@@ -38,10 +39,11 @@ macro_rules! test_syscall {
     
         ForkResult::Parent { child } => {
           let _s = &mut State {
-            fd_allocator: FdAllocator::new()
+            fd_allocator: FdAllocator::new(),
+            ..Default::default()
           };
           $(let _s = $state;)?
-          server::run(child, HashMap::from([("/test", mount)]), _s).unwrap();
+          server::run(child, HashMap::from([(Path::new("/test"), mount)]), _s).unwrap();
         }
       }
     }};
@@ -52,9 +54,9 @@ rusty_fork_test! {
   #[test]
   fn stat() {
     let mut fd_allocator = FdAllocator::new();
-    fd_allocator.set_current_mountpoint("/test");
+    fd_allocator.set_current_mountpoint(Path::new("/test"));
     let fstat_fd = fd_allocator.allocate_fd("fstat_id").unwrap();
-    let mut state = State { fd_allocator };
+    let mut state = State { fd_allocator, ..Default::default() };
 
     fn parse_req(data: &[u8]) {
       let req = flatbuffers::root::<fb::req::Request>(data).unwrap();
@@ -90,7 +92,7 @@ rusty_fork_test! {
         let statx = unsafe {
           let statx: libc::statx = MaybeUninit::zeroed().assume_init();
           let path = CString::new("/test/stat").unwrap();
-          let res = syscall(syscall_nr!(statx), libc::AT_FDCWD, path.as_ptr(), 0, libc::STATX_MODE, &statx as *const _);
+          let res = libc::syscall(syscall_nr!(statx), libc::AT_FDCWD, path.as_ptr(), 0, libc::STATX_MODE, &statx as *const _);
           assert_eq!(res, 0);
           statx
         };
@@ -104,7 +106,7 @@ rusty_fork_test! {
         let stat = unsafe {
           let stat: libc::stat = MaybeUninit::zeroed().assume_init();
           let path = CString::new("/test/stat").unwrap();
-          let res = syscall(syscall_nr!(stat), path.as_ptr(), &stat as *const _);
+          let res = libc::syscall(syscall_nr!(stat), path.as_ptr(), &stat as *const _);
           assert_eq!(res, 0);
           stat
         };
@@ -118,7 +120,7 @@ rusty_fork_test! {
         let stat = unsafe {
           let stat: libc::stat = MaybeUninit::zeroed().assume_init();
           let path = CString::new("/test/stat").unwrap();
-          let res = syscall(syscall_nr!(lstat), path.as_ptr(), &stat as *const _);
+          let res = libc::syscall(syscall_nr!(lstat), path.as_ptr(), &stat as *const _);
           assert_eq!(res, 0);
           stat
         };
@@ -131,7 +133,7 @@ rusty_fork_test! {
       move || {
         let stat = unsafe {
           let stat: libc::stat = MaybeUninit::zeroed().assume_init();
-          let res = syscall(syscall_nr!(fstat), fd as u32, &stat as *const _);
+          let res = libc::syscall(syscall_nr!(fstat), fd as u32, &stat as *const _);
           assert_eq!(res, 0);
           stat
         };
@@ -180,7 +182,7 @@ rusty_fork_test! {
       move || {
         unsafe {
           let path = CString::new("/test/open").unwrap();
-          let fd = syscall(syscall_nr!(open), path);
+          let fd = libc::syscall(syscall_nr!(open), path);
           assert!(fd > 0);
         };
       }
@@ -219,17 +221,41 @@ rusty_fork_test! {
     fn test_close(fd: u16) -> impl Fn() {
       move || {
         unsafe {
-          let res = syscall(syscall_nr!(close), fd as libc::c_uint);
+          let res = libc::syscall(syscall_nr!(close), fd as libc::c_uint);
           assert_eq!(res, 0);
         };
       }
     }
 
     let mut fd_allocator = FdAllocator::new();
-    fd_allocator.set_current_mountpoint("/test");
+    fd_allocator.set_current_mountpoint(Path::new("/test"));
     let fd = fd_allocator.allocate_fd("test_id").unwrap();
-    let mut state = State { fd_allocator };
+    let mut state = State { fd_allocator, ..Default::default() };
     test_syscall!(test_close(fd), parse_req, mock_res(), &mut state);
     assert!(state.fd_allocator.get_desc_for_fd(fd).is_none());
+  }
+
+  #[test]
+  fn getcwd() {
+
+    fn parse_req(_: &[u8]) {
+      unreachable!()
+    }
+
+    fn mock_res() -> Vec<u8> {
+      unreachable!()
+    }
+
+    fn test_getcwd() {
+      unsafe {
+        let buf = [0u8;8];
+        let res = libc::syscall(syscall_nr!(getcwd), &buf as *const _, 8);
+        assert_eq!(res, 1);
+        assert_eq!(String::from_utf8_lossy(&buf), "/getcwd\0");
+      };
+    }
+
+    let mut state = State { cwd: Path::new("/getcwd").to_path_buf(), ..Default::default() };
+    test_syscall!(test_getcwd, parse_req, mock_res, &mut state);
   }
 }

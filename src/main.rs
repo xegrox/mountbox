@@ -1,4 +1,4 @@
-use std::{collections::HashMap, os::unix::process::CommandExt, process::{exit, Command}};
+use std::{collections::HashMap, os::unix::process::CommandExt, path::Path, process::{exit, Command}};
 use anyhow::{anyhow, Result};
 use mountbox::{fd_allocator::FdAllocator, sockets, state::State};
 use mountbox::ptrace;
@@ -36,14 +36,15 @@ fn main() {
     }
 
     ForkResult::Parent { child } => {
-      let mut mountsockets = HashMap::<&str, Box<dyn sockets::Socket>>::new();
+      let mut mountsockets = HashMap::<&Path, Box<dyn sockets::Socket>>::new();
       if let Some(value) = &args.bind_unix_socket {
         for [dirp, socketp] in value {
-          mountsockets.insert(dirp, Box::new(sockets::unix::UnixSocket::connect(&socketp).unwrap()));
+          mountsockets.insert(Path::new(dirp), Box::new(sockets::unix::UnixSocket::connect(&socketp).unwrap()));
         }
       }
       server::run(child, mountsockets, &mut State {
-        fd_allocator: FdAllocator::new()
+        fd_allocator: FdAllocator::new(),
+        cwd: std::env::current_dir().unwrap()
       }).unwrap();
     }
   }

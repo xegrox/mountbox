@@ -1,16 +1,16 @@
-use std::{collections::HashMap, fs::File, os::fd::{FromRawFd, IntoRawFd, OwnedFd}};
+use std::{collections::HashMap, fs::File, os::fd::{FromRawFd, IntoRawFd, OwnedFd}, path::Path};
 
 use anyhow::Result;
 
 pub struct FdDesc<'a> {
   pub fd: u16,
   pub id: String,
-  pub mountpoint: &'a str
+  pub mountpoint: &'a Path
 }
 
 pub struct FdAllocator<'a> {
   fds: HashMap<u16, FdDesc<'a>>,
-  current_mountpoint: Option<&'a str>
+  current_mountpoint: Option<&'a Path>
 }
 
 impl<'a> FdAllocator<'a> {
@@ -23,7 +23,7 @@ impl<'a> FdAllocator<'a> {
     self.fds.get(&fd)
   }
 
-  pub fn set_current_mountpoint(&mut self, mountpoint: &'a str) {
+  pub fn set_current_mountpoint(&mut self, mountpoint: &'a Path) {
     self.current_mountpoint = Some(mountpoint);
   }
 

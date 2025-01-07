@@ -27,6 +27,7 @@ macro_rules! syscall_nr {
   (stat) => { 4 };
   (fstat) => { 5 };
   (lstat) => { 6 };
+  (getcwd) => { 79 };
   (statx) => { 332 };
 }
 
@@ -62,13 +63,7 @@ pub fn read_str(pid: Pid, addr: u64) -> Result<String> {
   }
 }
 
-pub fn write<T: Sized>(pid: Pid, addr: u64, data: &T) {
-  let bytes = unsafe {
-    ::core::slice::from_raw_parts(
-      (data as *const T) as *const u8,
-      ::core::mem::size_of::<T>(),
-    )
-  };
+pub fn write_bytes(pid: Pid, addr: u64, bytes: &[u8]) {
   let mut len = 0;
   while len < bytes.len() {
     let chunk: [u8; LONG_LEN] = if len+LONG_LEN > bytes.len() {
@@ -81,6 +76,16 @@ pub fn write<T: Sized>(pid: Pid, addr: u64, data: &T) {
     ptrace::write(pid, (addr as usize + len) as *mut c_void, c_long::from_ne_bytes(chunk)).unwrap();
     len += LONG_LEN;
   }
+}
+
+pub fn write<T: Sized>(pid: Pid, addr: u64, data: &T) {
+  let bytes = unsafe {
+    ::core::slice::from_raw_parts(
+      (data as *const T) as *const u8,
+      ::core::mem::size_of::<T>(),
+    )
+  };
+  write_bytes(pid, addr, bytes);
 }
 
 pub fn fake_syscall(pid: Pid, regs: user_regs_struct, ret: u64) {
