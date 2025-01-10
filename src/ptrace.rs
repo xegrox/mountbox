@@ -63,29 +63,19 @@ pub fn read_str(pid: Pid, addr: u64) -> Result<String> {
   }
 }
 
-pub fn write_bytes(pid: Pid, addr: u64, bytes: &[u8]) {
-  let mut len = 0;
-  while len < bytes.len() {
-    let chunk: [u8; LONG_LEN] = if len+LONG_LEN > bytes.len() {
-      let mut v = bytes[len..bytes.len()].to_vec();
+pub fn write_bytes(pid: Pid, addr: u64, bytes: &[u8], len: usize) {
+  let mut pos = 0;
+  while pos < len {
+    let chunk: [u8; LONG_LEN] = if pos+LONG_LEN > bytes.len() {
+      let mut v = bytes[pos..bytes.len()].to_vec();
       v.resize(LONG_LEN, 0);
       v.try_into().unwrap()
     } else {
-      bytes[len..len+LONG_LEN].try_into().unwrap()
+      bytes[pos..pos+LONG_LEN].try_into().unwrap()
     };
-    ptrace::write(pid, (addr as usize + len) as *mut c_void, c_long::from_ne_bytes(chunk)).unwrap();
-    len += LONG_LEN;
+    ptrace::write(pid, (addr as usize + pos) as *mut c_void, c_long::from_ne_bytes(chunk)).unwrap();
+    pos += LONG_LEN;
   }
-}
-
-pub fn write<T: Sized>(pid: Pid, addr: u64, data: &T) {
-  let bytes = unsafe {
-    ::core::slice::from_raw_parts(
-      (data as *const T) as *const u8,
-      ::core::mem::size_of::<T>(),
-    )
-  };
-  write_bytes(pid, addr, bytes);
 }
 
 pub fn fake_syscall(pid: Pid, regs: user_regs_struct, ret: u64) {

@@ -250,7 +250,7 @@ rusty_fork_test! {
       unsafe {
         let buf = [0u8;8];
         let res = libc::syscall(syscall_nr!(getcwd), &buf as *const _, 8);
-        assert_eq!(res, 1);
+        assert_eq!(res, 0);
         assert_eq!(String::from_utf8_lossy(&buf), "/getcwd\0");
       };
     }

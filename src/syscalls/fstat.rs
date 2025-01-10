@@ -2,14 +2,13 @@
 use std::i64;
 use std::mem::MaybeUninit;
 
+use nix::errno::Errno;
 use nix::libc;
-use nix::unistd::Pid;
 
 use crate::fb::{req, res};
-use crate::ptrace;
 use crate::state::State;
 
-pub fn serialize_call<'a>(fbb: &'a mut flatbuffers::FlatBufferBuilder, fd: u16, state: &mut State, _: &ptrace::user_regs_struct, _: Pid) -> &'a [u8] {
+pub fn serialize_call<'a>(fbb: &'a mut flatbuffers::FlatBufferBuilder, fd: u16, state: &mut State) -> &'a [u8] {
   fbb.reset();
   let fd_desc = state.fd_allocator.get_desc_for_fd(fd).unwrap();
   let fb_fd_id = fbb.create_string(&fd_desc.id);
@@ -27,7 +26,7 @@ pub fn serialize_call<'a>(fbb: &'a mut flatbuffers::FlatBufferBuilder, fd: u16, 
   return fbb.finished_data()
 }
 
-pub fn deserialize_ret(data: Vec<u8>, _: u16, _: &mut State, regs: &ptrace::user_regs_struct, pid: Pid) -> u64 {
+pub fn deserialize_ret(data: Vec<u8>, _: u16, _: &mut State) -> Result<libc::stat, Errno> {
   if let Ok(response) = res::root_as_response(&data) {
     if let Some(fb_stat) = response.payload_as_stat() {
       let mut stat = unsafe { MaybeUninit::<libc::stat>::zeroed().assume_init() };
@@ -37,9 +36,8 @@ pub fn deserialize_ret(data: Vec<u8>, _: u16, _: &mut State, regs: &ptrace::user
           _ => 0
       };
       stat.st_size = fb_stat.size_().try_into().unwrap_or_else(|_| i64::MAX);
-      ptrace::write(pid, ptrace::getreg!(regs, arg1), &stat);
-      return 0;
+      return Ok(stat);
     }
   }
-  return 1u64.wrapping_neg();
+  Err(Errno::EACCES)
 }
