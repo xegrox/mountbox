@@ -46,6 +46,19 @@ pub fn run<'a>(pid: Pid, mut mountsockets: HashMap<&'a Path, Box<dyn Socket>>, s
     None
   };
 
+  // macro_rules! parse_args {
+  //   ($pid: expr, $regs:expr, [$i:expr]str) => {(||{
+      
+  //   })()};
+  //   ($pid: expr, $regs:expr, [$i:expr]u64) => {(||{
+      
+  //   })()};
+  //   ($pid: expr, $regs:expr, [$i:expr]$t:tt, $($others:tt)*) => {
+      
+  //     (parse_args!([$i]$t), parse_args!($($others)*))
+  //   }
+  // }
+
   macro_rules! route_all {
     ($pid:expr, $regs:expr, $mod:tt, |$ret:ident| $get_code:block) => {{
       let code = match syscalls::$mod::handler(state) {
@@ -63,9 +76,9 @@ pub fn run<'a>(pid: Pid, mut mountsockets: HashMap<&'a Path, Box<dyn Socket>>, s
       route_all!($pid, $regs, $mod, |_ret| {
         $(
           let bytes = _ret.to_bytes();
-          let len = bytes.len();
-          $(let len = ptrace::getreg!($regs, $ret_len_arg);)?
-          ptrace::write_bytes(pid, ptrace::getreg!($regs, $ret_arg), bytes, len);
+          let _len = bytes.len();
+          $(let _len = ptrace::getreg!($regs, $ret_len_arg) as usize;)?
+          ptrace::write_bytes(pid, ptrace::getreg!($regs, $ret_arg), bytes, _len);
         )?
         0
       })
@@ -103,9 +116,9 @@ pub fn run<'a>(pid: Pid, mut mountsockets: HashMap<&'a Path, Box<dyn Socket>>, s
       route_path!($pid, $regs, $mod, $path_arg, |_ret| {
         $(
           let bytes = _ret.to_bytes();
-          let len = bytes.len();
-          $(let len = ptrace::getreg!($regs, $ret_len_arg);)?
-          ptrace::write_bytes(pid, ptrace::getreg!($regs, $ret_arg), bytes, len);
+          let _len = bytes.len();
+          $(let _len = ptrace::getreg!($regs, $ret_len_arg) as usize;)?
+          ptrace::write_bytes(pid, ptrace::getreg!($regs, $ret_arg), bytes, _len);
         )?
         0
       })
@@ -139,9 +152,9 @@ pub fn run<'a>(pid: Pid, mut mountsockets: HashMap<&'a Path, Box<dyn Socket>>, s
       route_fd!($pid, $regs, $mod, $fd_arg, |_ret| {
         $(
           let bytes = _ret.to_bytes();
-          let len = bytes.len();
-          $(let len = ptrace::get_reg!($regs, $ret_len_arg);)?
-          ptrace::write_bytes(pid, ptrace::getreg!($regs, $ret_arg), bytes, len);
+          let _len = bytes.len();
+          $(let _len = ptrace::getreg!($regs, $ret_len_arg) as usize;)?
+          ptrace::write_bytes(pid, ptrace::getreg!($regs, $ret_arg), bytes, _len);
         )?
         0
       })
@@ -158,7 +171,7 @@ pub fn run<'a>(pid: Pid, mut mountsockets: HashMap<&'a Path, Box<dyn Socket>>, s
       ptrace::syscall_nr!(fstat) => route_fd!(pid, regs, fstat, arg0, ret_data arg1),
       ptrace::syscall_nr!(lstat) => route_path!(pid, regs, lstat, arg0, ret_data arg1),
       ptrace::syscall_nr!(statx) => route_path!(pid, regs, statx, arg1, ret_data arg4),
-      ptrace::syscall_nr!(getcwd) => route_all!(pid, regs, getcwd, ret_data arg0),
+      ptrace::syscall_nr!(getcwd) => route_all!(pid, regs, getcwd, ret_data arg0[arg1]),
       _ => {
         ptrace::wait_syscall(pid).unwrap();
       }
