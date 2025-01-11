@@ -43,7 +43,7 @@ macro_rules! test_syscall {
             ..Default::default()
           };
           $(let _s = $state;)?
-          server::run(child, HashMap::from([(Path::new("/test"), mount)]), _s).unwrap();
+          server::run(child, HashMap::from([(Path::new("/test"), mount)]), _s);
         }
       }
     }};

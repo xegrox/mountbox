@@ -5,3 +5,4 @@ pub mod fd_allocator;
 pub mod server;
 pub mod sockets;
 pub mod state;
+pub mod router;

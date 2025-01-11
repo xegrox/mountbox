@@ -9,7 +9,7 @@ use clap::Parser;
 fn multipath_parser<const N: usize>(value: &str) -> Result<[String; N]> {
   value.splitn(N, ':').map(|p| {
     p.to_string()
-  }).collect::<Vec<String>>().try_into().map_err(|_| anyhow!("Paths not specified"))
+  }).collect::<Vec<String>>().try_into().map_err(|_| anyhow!("Missing dir or socket path"))
 }
 
 #[derive(Parser)]
@@ -24,6 +24,12 @@ struct Cli {
 
 fn main() {
   let args = Cli::parse();
+  let mut mountsockets = HashMap::<&Path, Box<dyn sockets::Socket>>::new();
+  if let Some(value) = &args.bind_unix_socket {
+    for [dirp, socketp] in value {
+      mountsockets.insert(Path::new(dirp), Box::new(sockets::unix::UnixSocket::connect(&socketp).unwrap()));
+    }
+  }
   match unsafe { fork().unwrap() } {
     ForkResult::Child => {
       ptrace::traceme().unwrap();
@@ -36,16 +42,10 @@ fn main() {
     }
 
     ForkResult::Parent { child } => {
-      let mut mountsockets = HashMap::<&Path, Box<dyn sockets::Socket>>::new();
-      if let Some(value) = &args.bind_unix_socket {
-        for [dirp, socketp] in value {
-          mountsockets.insert(Path::new(dirp), Box::new(sockets::unix::UnixSocket::connect(&socketp).unwrap()));
-        }
-      }
       server::run(child, mountsockets, &mut State {
         fd_allocator: FdAllocator::new(),
         cwd: std::env::current_dir().unwrap()
-      }).unwrap();
+      });
     }
   }
 }
