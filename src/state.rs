@@ -1,14 +1,23 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
-use crate::fd_allocator::FdAllocator;
+use flatbuffers::FlatBufferBuilder;
 
-pub struct State<'a> {
-  pub fd_allocator: FdAllocator<'a>,
+use crate::{fd_allocator::FdAllocator, mounts::Mounts};
+
+pub struct State {
+  pub mounts: Mounts,
+  pub fd_allocator: FdAllocator,
+  pub fbb: FlatBufferBuilder<'static>,
   pub cwd: PathBuf
 }
 
-impl<'a> Default for State<'a> {
+impl Default for State {
   fn default() -> Self {
-      State { fd_allocator: FdAllocator::new(), cwd: PathBuf::new() }
+    State {
+      mounts: Mounts::new(HashMap::new()),
+      fd_allocator: FdAllocator::new(),
+      cwd: PathBuf::new(),
+      fbb: FlatBufferBuilder::new()
+    }
   }
 }

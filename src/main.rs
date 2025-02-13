@@ -1,6 +1,6 @@
 use std::{collections::HashMap, os::unix::process::CommandExt, path::Path, process::{exit, Command}};
 use anyhow::{anyhow, Result};
-use mountbox::{fd_allocator::FdAllocator, sockets, state::State};
+use mountbox::{fd_allocator::FdAllocator, mounts::Mounts, sockets, state::State};
 use mountbox::ptrace;
 use mountbox::server;
 use nix::unistd::{fork, ForkResult};
@@ -42,10 +42,12 @@ fn main() {
     }
 
     ForkResult::Parent { child } => {
-      server::run(child, mountsockets, &mut State {
+      server::run(&mut State {
+        mounts: Mounts::new(mountsockets),
         fd_allocator: FdAllocator::new(),
-        cwd: std::env::current_dir().unwrap()
-      });
+        cwd: std::env::current_dir().unwrap(),
+        ..Default::default()
+      }, child);
     }
   }
 }

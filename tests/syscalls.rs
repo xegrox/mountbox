@@ -3,8 +3,9 @@ use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::process::exit;
 use std::path::Path;
+use std::rc::Rc;
 use mountbox::fb;
-use mountbox::{state::State, sockets::Socket, ptrace, server, syscall_nr, fd_allocator::FdAllocator};
+use mountbox::{state::State, sockets::Socket, ptrace, server, syscall_nr, fd_allocator::FdAllocator, mounts::Mounts};
 use nix::libc;
 use nix::unistd::{fork, ForkResult};
 use rusty_fork::rusty_fork_test;
@@ -28,7 +29,7 @@ macro_rules! test_syscall {
         }
       }
     
-      let mount: Box<dyn Socket> = Box::new(MockSocket {});
+      let socket: Box<dyn Socket> = Box::new(MockSocket {});
       match unsafe { fork().unwrap() } {
         ForkResult::Child => {
           ptrace::traceme().unwrap();
@@ -38,12 +39,14 @@ macro_rules! test_syscall {
         }
     
         ForkResult::Parent { child } => {
+          let mounts = Mounts::new(HashMap::from([(Path::new("/test"), socket)]));
           let _s = &mut State {
             fd_allocator: FdAllocator::new(),
             ..Default::default()
           };
           $(let _s = $state;)?
-          server::run(child, HashMap::from([(Path::new("/test"), mount)]), _s);
+          _s.mounts = mounts;
+          server::run(_s, child);
         }
       }
     }};
@@ -54,8 +57,7 @@ rusty_fork_test! {
   #[test]
   fn stat() {
     let mut fd_allocator = FdAllocator::new();
-    fd_allocator.set_current_mountpoint(Path::new("/test"));
-    let fstat_fd = fd_allocator.allocate_fd("fstat_id").unwrap();
+    let fstat_fd = fd_allocator.allocate_fd(Rc::from(Path::new("/test")), "fstat_id").unwrap();
     let mut state = State { fd_allocator, ..Default::default() };
 
     fn parse_req(data: &[u8]) {
@@ -228,8 +230,7 @@ rusty_fork_test! {
     }
 
     let mut fd_allocator = FdAllocator::new();
-    fd_allocator.set_current_mountpoint(Path::new("/test"));
-    let fd = fd_allocator.allocate_fd("test_id").unwrap();
+    let fd = fd_allocator.allocate_fd(Rc::from(Path::new("/test")), "test_id").unwrap();
     let mut state = State { fd_allocator, ..Default::default() };
     test_syscall!(test_close(fd), parse_req, mock_res(), &mut state);
     assert!(state.fd_allocator.get_desc_for_fd(fd).is_none());
