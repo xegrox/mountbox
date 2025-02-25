@@ -190,8 +190,18 @@ rusty_fork_test! {
       }
     }
 
+    fn test_openat() -> impl Fn() {
+      move || {
+        unsafe {
+          let path = CString::new("/test/open").unwrap();
+          let fd = libc::syscall(syscall_nr!(openat), libc::AT_FDCWD, path);
+          assert!(fd > 0);
+        };
+      }
+    }
+
     test_syscall!(test_open(), parse_req, mock_res());
-    
+    test_syscall!(test_openat(), parse_req, mock_res());
   }
 
   #[test]

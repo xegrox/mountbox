@@ -28,6 +28,7 @@ macro_rules! syscall_nr {
   (fstat) => { 5 };
   (lstat) => { 6 };
   (getcwd) => { 79 };
+  (openat) => { 257 };
   (statx) => { 332 };
 }
 

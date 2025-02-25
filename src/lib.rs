@@ -7,3 +7,4 @@ pub mod sockets;
 pub mod state;
 pub mod router;
 pub mod mounts;
+pub mod dirfd_resolver;
