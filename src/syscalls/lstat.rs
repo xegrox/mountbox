@@ -25,7 +25,7 @@ pub fn serialize_req(state: &mut State, _mountpoint: Rc<Path>, path: &Path) -> R
   Ok(())
 }
 
-pub fn deserialize_res(_state: &mut State, _mountpoint: Rc<Path>, _path: &Path, data: Vec<u8>) -> Result<libc::stat, Errno> {
+pub fn deserialize_res(_state: &mut State, _mountpoint: Rc<Path>, _path: &Path, data: &Vec<u8>) -> Result<libc::stat, Errno> {
   if let Ok(response) = res::root_as_response(&data) {
     if let Some(fb_stat) = response.payload_as_stat() {
       let mut stat = unsafe { MaybeUninit::<libc::stat>::zeroed().assume_init() };

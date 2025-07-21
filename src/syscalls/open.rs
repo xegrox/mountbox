@@ -21,10 +21,10 @@ pub fn serialize_req(state: &mut State, _mountpoint: Rc<Path>, path: &Path) -> R
   Ok(())
 }
 
-pub fn deserialize_res(state: &mut State, mountpoint: Rc<Path>, _path: &Path, data: Vec<u8>) -> Result<u64, Errno> {
+pub fn deserialize_res(state: &mut State, mountpoint: Rc<Path>, _path: &Path, data: &Vec<u8>) -> Result<((), u64), Errno> {
   if let Ok(response) = res::root_as_response(&data) {
     if let Some(fb_fd) = response.payload_as_fd() {
-      return state.fd_allocator.allocate_fd(mountpoint, fb_fd.id()).map(|fd| fd.into()).map_err(|_| Errno::EPERM);
+      return state.fd_allocator.allocate_fd(mountpoint, fb_fd.id()).map(|fd| ((), fd.into())).map_err(|_| Errno::EPERM);
     }
   }
   Err(Errno::EPERM)

@@ -163,21 +163,19 @@ rusty_fork_test! {
       assert_eq!(op.path(), "/open");
     }
 
-    fn mock_res() -> impl Fn() -> Vec<u8> {
-      move || {
-        let fbb = &mut flatbuffers::FlatBufferBuilder::new();
-        let fb_id = Some(fbb.create_string("test_id"));
-        let fb_fd = fb::res::Fd::create(fbb, &fb::res::FdArgs {
-          id: fb_id
-        });
-        let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
-          payload_type: fb::res::Payload::Fd,
-          payload: Some(fb_fd.as_union_value()),
-          error: None
-        });
-        fbb.finish(res, None);
-        fbb.finished_data().to_vec()
-      }
+    fn mock_res() -> Vec<u8> {
+      let fbb = &mut flatbuffers::FlatBufferBuilder::new();
+      let fb_id = Some(fbb.create_string("test_id"));
+      let fb_fd = fb::res::Fd::create(fbb, &fb::res::FdArgs {
+        id: fb_id
+      });
+      let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
+        payload_type: fb::res::Payload::Fd,
+        payload: Some(fb_fd.as_union_value()),
+        error: None
+      });
+      fbb.finish(res, None);
+      fbb.finished_data().to_vec()
     }
 
     fn test_open() -> impl Fn() {
@@ -200,8 +198,8 @@ rusty_fork_test! {
       }
     }
 
-    test_syscall!(test_open(), parse_req, mock_res());
-    test_syscall!(test_openat(), parse_req, mock_res());
+    test_syscall!(test_open(), parse_req, mock_res);
+    test_syscall!(test_openat(), parse_req, mock_res);
   }
 
   #[test]
@@ -213,21 +211,19 @@ rusty_fork_test! {
       assert_eq!(op.fd().id(), "test_id");
     }
 
-    fn mock_res() -> impl Fn() -> Vec<u8> {
-      move || {
-        let fbb = &mut flatbuffers::FlatBufferBuilder::new();
-        let fb_id = Some(fbb.create_string("test_id"));
-        let fb_fd = fb::res::Fd::create(fbb, &fb::res::FdArgs {
-          id: fb_id
-        });
-        let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
-          payload_type: fb::res::Payload::Fd,
-          payload: Some(fb_fd.as_union_value()),
-          error: None
-        });
-        fbb.finish(res, None);
-        fbb.finished_data().to_vec()
-      }
+    fn mock_res() -> Vec<u8> {
+      let fbb = &mut flatbuffers::FlatBufferBuilder::new();
+      let fb_id = Some(fbb.create_string("test_id"));
+      let fb_fd = fb::res::Fd::create(fbb, &fb::res::FdArgs {
+        id: fb_id
+      });
+      let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
+        payload_type: fb::res::Payload::Fd,
+        payload: Some(fb_fd.as_union_value()),
+        error: None
+      });
+      fbb.finish(res, None);
+      fbb.finished_data().to_vec()
     }
 
     fn test_close(fd: u16) -> impl Fn() {
@@ -242,10 +238,52 @@ rusty_fork_test! {
     let mut fd_allocator = FdAllocator::new();
     let fd = fd_allocator.allocate_fd(Rc::from(Path::new("/test")), "test_id").unwrap();
     let mut state = State { fd_allocator, ..Default::default() };
-    test_syscall!(test_close(fd), parse_req, mock_res(), &mut state);
+    test_syscall!(test_close(fd), parse_req, mock_res, &mut state);
     assert!(state.fd_allocator.get_desc_for_fd(fd).is_none());
   }
 
+  #[test]
+  fn read() {
+
+    fn parse_req(data: &[u8]) {
+      let req = flatbuffers::root::<fb::req::Request>(data).unwrap();
+      let op = req.operation_as_read().expect("Expected read operation");
+      assert_eq!(op.fd().id(), "test_id");
+      assert_eq!(op.len(), 4);
+    }
+
+    fn mock_res() -> Vec<u8> {
+      let fbb = &mut flatbuffers::FlatBufferBuilder::new();
+      let fb_data = fbb.create_vector(&[0u8, 1, 2, 3]);
+      let fb_read = fb::res::Read::create(fbb, &fb::res::ReadArgs {
+        data: Some(fb_data)
+      });
+      let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
+        payload_type: fb::res::Payload::Read,
+        payload: Some(fb_read.as_union_value()),
+        error: None
+      });
+      fbb.finish(res, None);
+      fbb.finished_data().to_vec()
+    }
+
+    fn test_read(fd: u16) -> impl Fn() {
+      move || {
+        unsafe {
+          let buf = [0u8; 4];
+          let res = libc::syscall(syscall_nr!(read), fd as libc::c_uint, &buf as *const _, 4);
+          assert_eq!(res, 4);
+          assert_eq!(buf, [0, 1, 2, 3])
+        };
+      }
+    }
+
+    let mut fd_allocator = FdAllocator::new();
+    let fd = fd_allocator.allocate_fd(Rc::from(Path::new("/test")), "test_id").unwrap();
+    let mut state = State { fd_allocator, ..Default::default() };
+    test_syscall!(test_read(fd), parse_req, mock_res, &mut state);
+  }
+  
   #[test]
   fn getcwd() {
 

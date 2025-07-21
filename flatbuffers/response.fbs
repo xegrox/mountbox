@@ -5,6 +5,10 @@ table Stat {
   size: uint64;
 }
 
+table Read {
+  data: [ubyte] (required);
+}
+
 table Fd {
   id: string (required);
 }
@@ -13,7 +17,7 @@ enum Error: byte {
   Unknown
 }
 
-union Payload { Stat, Fd }
+union Payload { Stat, Fd, Read }
 
 table Response {
   payload: Payload (required);

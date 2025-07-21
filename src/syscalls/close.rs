@@ -25,7 +25,7 @@ pub fn serialize_req(state: &mut State, _mountpoint: Rc<Path>, fd: u16) -> Resul
   Ok(())
 }
 
-pub fn deserialize_res(state: &mut State, _mountpoint: Rc<Path>, fd: u16, data: Vec<u8>) -> Result<(), Errno> {
+pub fn deserialize_res(state: &mut State, _mountpoint: Rc<Path>, fd: u16, data: &Vec<u8>) -> Result<(), Errno> {
   if let Ok(_) = res::root_as_response(&data) {
     state.fd_allocator.drop_fd(fd);
     return Ok(());
