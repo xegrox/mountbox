@@ -28,10 +28,16 @@ macro_rules! el {
     ($e:stmt,) => {$e};
 }
 
+macro_rules! ifelse {
+  ($a:stmt, $b:stmt, true) => {$a};
+  ($a:stmt, $b:stmt, false) => {$b};
+  ($a:stmt, $b:stmt,) => {$b};
+}
+
 pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<()> {
   
   macro_rules! route_path {
-    ($mod:tt, $path_arg:tt$([$dirfd_arg:tt])?, |$ret:ident| $get_code:block) => {{
+    ($mod:tt, $path_arg:tt$(@$dirfd_arg:tt)? $(, args($($arg:tt: $type:tt)*))? $(, result($res_arg:tt $([$res_len_arg:tt])? $(, raw=$raw:tt)?))?) => {{
       if let Ok(path) = crate::ptrace::read_str(pid, ptrace::getreg!(regs, $path_arg)) {
         $(
           let dirfd = ptrace::getreg!(regs, $dirfd_arg) as i32;
@@ -43,12 +49,20 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
           state.fbb.reset();
           let relpath = std::path::Path::new("/").join(fullpath.strip_prefix(&mount.path).unwrap());
           let mountpoint = mount.path.clone();
-          syscalls::$mod::serialize_req(state, mountpoint.clone(), &relpath)?;
+          syscalls::$mod::serialize_req(state, mountpoint.clone(), &relpath $(, $(parse_arg!($arg[$type])),*)?)?;
           let socket = &mut state.mounts.get_mount_mut(&mountpoint).unwrap().socket;
           socket.write(state.fbb.finished_data());
           let response = socket.read();
           let code = match syscalls::$mod::deserialize_res(state, mountpoint.clone(), &relpath, response) {
-            Ok($ret) => $get_code,
+            Ok(_res) => {
+              $(
+                ifelse!(let bytes = &_res, let bytes = _res.to_bytes(), $($raw)?);
+                $(let len = ptrace::getreg!(regs, $res_len_arg) as usize;)?
+                el!(let len = bytes.len(), $($res_len_arg)?);
+                ptrace::write_bytes(pid, ptrace::getreg!(regs, $res_arg), bytes, len);
+              )?
+              0
+            },
             Err(err) => err as u64
           };
           ptrace::fake_syscall(pid, regs, code);
@@ -57,36 +71,28 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
         }
       }
     }};
-    ($mod:tt, $path_arg:tt$([$dirfd_arg:tt])?, ret_code) => {
-      route_path!($mod, $path_arg$([$dirfd_arg])?, |_ret| {
-        _ret
-      })
-    };
-    ($mod:tt, $path_arg:tt $(, ret_data $ret_arg:tt $([$ret_len_arg:tt])?)?) => {
-      route_path!($mod, $path_arg, |_ret| {
-        $(
-          let bytes = _ret.to_bytes();
-          let _len = bytes.len();
-          $(let _len = ptrace::getreg!(regs, $ret_len_arg) as usize;)?
-          ptrace::write_bytes(pid, ptrace::getreg!(regs, $ret_arg), bytes, _len);
-        )?
-        0
-      })
-    };
   }
 
   macro_rules! route_fd {
-    ($syscall:tt, $fd_arg:tt, |$ret:ident| $get_code:block) => {{
+    ($syscall:tt, $fd_arg:tt $(, args($($arg:tt: $type:tt)*))? $(, result($res_arg:tt $([$res_len_arg:tt])? $(, raw=$raw:tt)?))?) => {{
       let fd = ptrace::getreg!(regs, $fd_arg).try_into().unwrap();
       if let Some(fd_desc) = state.fd_allocator.get_desc_for_fd(fd) {
         let mountpoint = fd_desc.mountpoint.clone();
         state.fbb.reset();
-        syscalls::$syscall::serialize_req(state, mountpoint.clone(), fd)?;
+        syscalls::$syscall::serialize_req(state, mountpoint.clone(), fd $(, $(parse_arg!($arg[$type])),*)?)?;
         let socket = &mut state.mounts.get_mount_mut(&mountpoint).unwrap().socket;
         socket.write(state.fbb.finished_data());
         let res = socket.read();
         let code = match syscalls::$syscall::deserialize_res(state, mountpoint.clone(), fd, res) {
-          Ok($ret) => $get_code,
+          Ok(_res) => {
+            $(
+              ifelse!(let bytes = &_res, let bytes = _res.to_bytes(), $($raw)?);
+              $(let len = ptrace::getreg!(regs, $res_len_arg) as usize;)?
+              el!(let len = bytes.len(), $($res_len_arg)?);
+              ptrace::write_bytes(pid, ptrace::getreg!(regs, $res_arg), bytes, len);
+            )?
+            0
+          },
           Err(err) => err as u64
         };
         ptrace::fake_syscall(pid, regs, code);
@@ -94,59 +100,42 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
         ptrace::wait_syscall(pid).unwrap();
       }
     }};
-    ($mod:tt, $fd_arg:tt, ret_code) => {
-      route_fd!($mod, $fd_arg, |_ret| {
-        _ret
-      })
-    };
-    ($mod:tt, $fd_arg:tt $(, ret_data $ret_arg:tt $([$ret_len_arg:tt])?)?) => {
-      route_fd!($mod, $fd_arg, |_ret| {
-        $(
-          let bytes = _ret.to_bytes();
-          let _len = bytes.len();
-          $(let _len = ptrace::getreg!(regs, $ret_len_arg) as usize;)?
-          ptrace::write_bytes(pid, ptrace::getreg!(regs, $ret_arg), bytes, _len);
-        )?
-        0
-      })
-    };
   }
 
   macro_rules! route_all {
-    ($mod:tt, |$ret:ident| $get_code:block) => {{
-      let code = match syscalls::$mod::handler(state) {
-        Ok($ret) => $get_code,
+    ($mod:tt $(, args($($arg:tt: $type:tt)*))? $(, result($res_arg:tt $([$res_len_arg:tt])? $(, raw=$raw:tt)?))?) => {{
+      let code = match syscalls::$mod::handler(state$(, $(parse_arg!($arg[$type])),*)?) {
+        Ok(_res) => {
+          $(
+            ifelse!(let bytes = &_res, let bytes = _res.to_bytes(), $($raw)?);
+            $(let len = ptrace::getreg!(regs, $res_len_arg) as usize;)?
+            el!(let len = bytes.len(), $($res_len_arg)?);
+            ptrace::write_bytes(pid, ptrace::getreg!(regs, $res_arg), bytes, len);
+          )?
+          0
+        },
         Err(err) => err as u64
       };
       ptrace::fake_syscall(pid, regs, code);
     }};
-    ($mod:tt, ret_code) => {
-      route_all!($mod, |_ret| {
-        _ret
-      })
-    };
-    ($mod:tt $(, ret_data $ret_arg:tt $([$ret_len_arg:tt])?)?) => {
-      route_all!($mod, |_ret| {
-        $(
-          let bytes = _ret.to_bytes();
-          let _len = bytes.len();
-          $(let _len = ptrace::getreg!(regs, $ret_len_arg) as usize;)?
-          ptrace::write_bytes(pid, ptrace::getreg!(regs, $ret_arg), bytes, _len);
-        )?
-        0
-      })
-    };
   }
 
+  macro_rules! parse_arg {
+    ($arg:tt[usize]) => {
+      usize::try_from(ptrace::getreg!(regs, $arg)).unwrap()
+    };
+  }
+  
   match ptrace::getreg!(regs, syscall_nr) {
-    ptrace::syscall_nr!(open) => route_path!(open, arg0, ret_code),
-    ptrace::syscall_nr!(openat) => route_path!(open, arg1[arg0], ret_code),
+    ptrace::syscall_nr!(read) => route_fd!(read, arg0, args(arg2: usize), result(arg1[arg2], raw=true)),
+    ptrace::syscall_nr!(open) => route_path!(open, arg0),
+    ptrace::syscall_nr!(openat) => route_path!(open, arg1@arg0),
     ptrace::syscall_nr!(close) => route_fd!(close, arg0),
-    ptrace::syscall_nr!(stat) => route_path!(stat, arg0, ret_data arg1),
-    ptrace::syscall_nr!(fstat) => route_fd!(fstat, arg0, ret_data arg1),
-    ptrace::syscall_nr!(lstat) => route_path!(lstat, arg0, ret_data arg1),
-    ptrace::syscall_nr!(statx) => route_path!(statx, arg1, ret_data arg4),
-    ptrace::syscall_nr!(getcwd) => route_all!(getcwd, ret_data arg0[arg1]),
+    ptrace::syscall_nr!(stat) => route_path!(stat, arg0, result(arg1)),
+    ptrace::syscall_nr!(fstat) => route_fd!(fstat, arg0, result(arg1)),
+    ptrace::syscall_nr!(lstat) => route_path!(lstat, arg0, result(arg1)),
+    ptrace::syscall_nr!(statx) => route_path!(statx, arg1, result(arg4)),
+    ptrace::syscall_nr!(getcwd) => route_all!(getcwd, result(arg0[arg1])),
     _ => {
       ptrace::wait_syscall(pid).unwrap();
     }

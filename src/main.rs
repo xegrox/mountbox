@@ -37,7 +37,7 @@ fn main() {
       if args.command.len() > 1 {
         cmd.args(&args.command[1..]);
       }
-      cmd.exec();
+      let _ = cmd.exec();
       exit(0);
     }
 

@@ -22,6 +22,7 @@ macro_rules! getreg {
 #[cfg(target_arch="x86_64")]
 #[macro_export]
 macro_rules! syscall_nr {
+  (read) => { 0 };
   (open) => { 2 };
   (close) => { 3 };
   (stat) => { 4 };

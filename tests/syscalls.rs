@@ -247,6 +247,37 @@ rusty_fork_test! {
   }
 
   #[test]
+  fn read() {
+
+    fn parse_req(data: &[u8]) {
+      let req = flatbuffers::root::<fb::req::Request>(data).unwrap();
+      let op = req.operation_as_read().expect("Expected read operation");
+      assert_eq!(op.fd().id(), "test_id");
+      assert_eq!(op.len(), 4);
+    }
+
+    fn mock_res() -> Vec<u8> {
+      return vec![0, 1, 2, 3, 4, 5]
+    }
+
+    fn test_read(fd: u16) -> impl Fn() {
+      move || {
+        unsafe {
+          let buf = [0u8; 4];
+          let res = libc::syscall(syscall_nr!(read), fd as libc::c_uint, &buf as *const _, 4);
+          assert_eq!(res, 0);
+          assert_eq!(buf, [0, 1, 2, 3])
+        };
+      }
+    }
+
+    let mut fd_allocator = FdAllocator::new();
+    let fd = fd_allocator.allocate_fd(Rc::from(Path::new("/test")), "test_id").unwrap();
+    let mut state = State { fd_allocator, ..Default::default() };
+    test_syscall!(test_read(fd), parse_req, mock_res, &mut state);
+  }
+  
+  #[test]
   fn getcwd() {
 
     fn parse_req(_: &[u8]) {
