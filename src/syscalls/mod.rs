@@ -6,4 +6,4 @@ pub mod lstat;
 pub mod statx;
 pub mod getcwd;
 pub mod read;
-// pub mod fexecve;
+pub mod execve;

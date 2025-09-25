@@ -42,13 +42,33 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
       $body
     };
   }
+
+  macro_rules! route_path_custom {
+    ($syscall:tt, $path_arg:tt$(@$dirfd_arg:tt)? $(, args($($arg:tt: $type:tt)*))?) => {
+      if let Ok(path) = crate::ptrace::read_str(pid, ptrace::getreg!(regs, $path_arg)) {
+        $(
+          let dirfd = ptrace::getreg!(regs, $dirfd_arg) as i32;
+          let fullpath = state.dirfd_resolver.resolve(dirfd, &path).join(state.cwd.join(path));
+        )?
+        el!(let fullpath = state.cwd.join(path), $($dirfd_arg)?);
+        let mount = state.mounts.get_mount_of_path(fullpath.as_path());
+        if let Some(mount) = mount {
+          let relpath = std::path::Path::new("/").join(fullpath.strip_prefix(&mount.path).unwrap());
+          let mountpoint = mount.path.clone();
+          syscalls::$syscall::handler(state, pid, mountpoint, &relpath $(, $(parse_arg!($arg[$type])),*)?)?;
+        } else {
+          ptrace::wait_syscall(pid).unwrap();
+        }
+      }
+    }
+  }
   
   macro_rules! route_path {
     ($mod:tt, $path_arg:tt$(@$dirfd_arg:tt)? $(, args($($arg:tt: $type:tt)*))? $(, result($res_type:tt $res_arg:tt $([$res_len_arg:tt])?))?  $(, result_code=$res_has_code:tt)?) => {{
       if let Ok(path) = crate::ptrace::read_str(pid, ptrace::getreg!(regs, $path_arg)) {
         $(
           let dirfd = ptrace::getreg!(regs, $dirfd_arg) as i32;
-          let fullpath = state.dirfd_resolver.resolve(dirfd, &path).join(state.cwd.join(path));
+          let fullpath = state.dirfd_resolver.resolve(pid, dirfd, &path).join(state.cwd.join(path));
         )?
         el!(let fullpath = state.cwd.join(path), $($dirfd_arg)?);
         let mount = state.mounts.get_mount_of_path(fullpath.as_path());
@@ -158,6 +178,7 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
     ptrace::syscall_nr!(lstat) => route_path!(lstat, arg0, result(raw arg1)),
     ptrace::syscall_nr!(statx) => route_path!(statx, arg1, result(raw arg4)),
     ptrace::syscall_nr!(getcwd) => route_all!(getcwd, result(string arg0[arg1])),
+    ptrace::syscall_nr!(execve) => route_path_custom!(execve, arg0),
     _ => {
       ptrace::wait_syscall(pid).unwrap();
     }

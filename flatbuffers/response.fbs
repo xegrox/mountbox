@@ -20,7 +20,7 @@ enum Error: byte {
 union Payload { Stat, Fd, Read }
 
 table Response {
-  payload: Payload (required);
+  payload: Payload;
   error: Error = null;
 }
 

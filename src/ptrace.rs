@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct};
+pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct, sys::ptrace::setregs};
 use std::ffi::{c_long, c_void, CStr};
 use nix::sys::{ptrace, wait::wait};
 
@@ -28,8 +28,10 @@ macro_rules! syscall_nr {
   (stat) => { 4 };
   (fstat) => { 5 };
   (lstat) => { 6 };
+  (execve) => { 59 };
   (getcwd) => { 79 };
   (openat) => { 257 };
+  (execveat) => { 322 };
   (statx) => { 332 };
 }
 
@@ -65,9 +67,9 @@ pub fn read_str(pid: Pid, addr: u64) -> Result<String> {
   }
 }
 
-pub fn write_bytes(pid: Pid, addr: u64, bytes: &[u8], len: usize) {
+pub fn write_bytes(pid: Pid, addr: u64, bytes: &[u8], buffer_size: usize) {
   let mut pos = 0;
-  while pos < len {
+  while pos < buffer_size && pos < bytes.len() {
     let chunk: [u8; LONG_LEN] = if pos+LONG_LEN > bytes.len() {
       let mut v = bytes[pos..bytes.len()].to_vec();
       v.resize(LONG_LEN, 0);

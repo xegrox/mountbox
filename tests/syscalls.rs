@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::process::exit;
@@ -9,6 +9,92 @@ use mountbox::{state::State, sockets::Socket, ptrace, server, syscall_nr, fd_all
 use nix::libc;
 use nix::unistd::{fork, ForkResult};
 use rusty_fork::rusty_fork_test;
+use paste::paste;
+
+struct MockSocket {
+  pair: VecDeque<(Box<dyn Fn(&[u8])>, Box<dyn Fn() -> Vec<u8>>)>
+}
+
+impl MockSocket {
+  fn new() -> MockSocket {
+    MockSocket { pair: VecDeque::new() }
+  }
+
+  fn queue_pair<R, T>(&mut self, req: R, res: T)
+  where
+    R: Fn(&[u8]) + 'static,
+    T: Fn() -> Vec<u8> + 'static {
+    self.pair.push_back((Box::new(req), Box::new(res)));
+  }
+}
+
+impl Drop for MockSocket {
+  fn drop(&mut self) {
+    assert!(self.pair.is_empty(), "{} unhandled mock reply", self.pair.len())
+  }
+}
+
+impl Socket for MockSocket {
+  fn write(&mut self, data: &[u8]) {
+    if let Some((res, _)) = self.pair.front() {
+      res(data)
+    } else {
+      let req = flatbuffers::root::<fb::req::Request>(data).unwrap();
+      panic!("Unhandled request {}", req.operation_type().variant_name().unwrap())
+    }
+  }
+
+  fn read(&mut self) -> Vec<u8> {
+    if let Some((_, req)) = self.pair.pop_front() {
+      req()
+    } else {
+      unreachable!()
+    }
+  }
+}
+
+macro_rules! queue_mock_response {
+  ($socket:expr, $req_type:tt, $res:expr $(, $req:expr)?) => {
+    $socket.queue_pair(|_data| {
+      $(let req = flatbuffers::root::<fb::req::Request>(_data).unwrap();
+      paste! {
+        let op = req.[<operation_as_ $req_type>]()
+          .expect(&format!("Expected {} operation, got {}", stringify!($req_type), req.operation_type().variant_name().unwrap()));
+      }
+      $req(op);)?
+    }, || {
+      let fbb = &mut flatbuffers::FlatBufferBuilder::new();
+      $res(fbb);
+      fbb.finished_data().to_vec()
+    });
+  };
+}
+
+macro_rules! test_syscall_ {
+  ($socket:expr, $test_syscall:expr $(, $state:expr)?) => {
+    let _s = &mut State {
+      fd_allocator: FdAllocator::new(),
+      ..Default::default()
+    };
+    $(let _s = $state;)?
+  
+    let socket: Box<dyn Socket> = Box::new($socket);
+    match unsafe { fork().unwrap() } {
+      ForkResult::Child => {
+        ptrace::traceme().unwrap();
+        unsafe { libc::raise(libc::SIGTRAP); }
+        $test_syscall();
+        exit(0);
+      }
+  
+      ForkResult::Parent { child } => {
+        let mounts = Mounts::new(HashMap::from([(Path::new("/test"), socket)]));
+        _s.mounts = mounts;
+        server::run(_s, child);
+      }
+    }
+  };
+}
 
 macro_rules! test_syscall {
     (
@@ -28,6 +114,12 @@ macro_rules! test_syscall {
           $mock_res()
         }
       }
+
+      let _s = &mut State {
+        fd_allocator: FdAllocator::new(),
+        ..Default::default()
+      };
+      $(let _s = $state;)?
     
       let socket: Box<dyn Socket> = Box::new(MockSocket {});
       match unsafe { fork().unwrap() } {
@@ -40,11 +132,6 @@ macro_rules! test_syscall {
     
         ForkResult::Parent { child } => {
           let mounts = Mounts::new(HashMap::from([(Path::new("/test"), socket)]));
-          let _s = &mut State {
-            fd_allocator: FdAllocator::new(),
-            ..Default::default()
-          };
-          $(let _s = $state;)?
           _s.mounts = mounts;
           server::run(_s, child);
         }
@@ -306,5 +393,95 @@ rusty_fork_test! {
 
     let mut state = State { cwd: Path::new("/getcwd").to_path_buf(), ..Default::default() };
     test_syscall!(test_getcwd, parse_req, mock_res, &mut state);
+  }
+
+
+  #[test]
+  fn execve() {
+
+    fn test_execve() {
+      unsafe {
+        let path = CString::new("/test/execve").unwrap();
+        libc::syscall(syscall_nr!(execve), path.as_ptr(), 0, 0);
+      };
+    }
+
+    fn test_open_req(open: fb::req::Open) {
+      assert_eq!(open.path(), "/execve");
+    }
+
+    fn mock_open_res(fbb: &mut flatbuffers::FlatBufferBuilder) {
+      let fb_fd_id = fbb.create_string("fd_execve");
+      let fb_fd = fb::res::Fd::create(fbb, &fb::res::FdArgs {
+        id: Some(fb_fd_id)
+      });
+      let fb_req = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
+        payload_type: fb::res::Payload::Fd,
+        payload: Some(fb_fd.as_union_value()),
+        error: None
+      });
+      fbb.finish(fb_req, None);
+    }
+
+    fn test_read_req(read: fb::req::Read) {
+      assert_eq!(read.fd().id(), "fd_execve");
+    }
+
+    fn mock_read_res(fbb: &mut flatbuffers::FlatBufferBuilder) {
+      let script = String::from("#!/bin/sh\necho hello");
+      let fb_data = fbb.create_vector(script.as_bytes());
+      let fb_read = fb::res::Read::create(fbb, &fb::res::ReadArgs {
+        data: Some(fb_data)
+      });
+      let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
+        payload_type: fb::res::Payload::Read,
+        payload: Some(fb_read.as_union_value()),
+        error: None
+      });
+      fbb.finish(res, None);
+    }
+
+    fn mock_read_res_eof(fbb: &mut flatbuffers::FlatBufferBuilder) {
+      let fb_data = fbb.create_vector(&[0u8; 0]);
+      let fb_read = fb::res::Read::create(fbb, &fb::res::ReadArgs {
+        data: Some(fb_data)
+      });
+      let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
+        payload_type: fb::res::Payload::Read,
+        payload: Some(fb_read.as_union_value()),
+        error: None
+      });
+      fbb.finish(res, None);
+    }
+
+    fn mock_fstat_res(fbb: &mut flatbuffers::FlatBufferBuilder) {
+      let fb_stat = fb::res::Stat::create(fbb, &fb::res::StatArgs {
+        size_: 0,
+        type_: fb::res::FileType::File
+      });
+      let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
+        payload_type: fb::res::Payload::Stat,
+        payload: Some(fb_stat.as_union_value()),
+        error: None
+      });
+      fbb.finish(res, None);
+    }
+
+    fn mock_close_res(fbb: &mut flatbuffers::FlatBufferBuilder) {
+      let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
+        payload_type: fb::res::Payload::NONE,
+        payload: None,
+        error: None
+      });
+      fbb.finish(res, None);
+    }
+
+    let mut socket = MockSocket::new();
+    queue_mock_response!(socket, open, mock_open_res, test_open_req);
+    queue_mock_response!(socket, read, mock_read_res, test_read_req);
+    queue_mock_response!(socket, read, mock_read_res_eof, test_read_req);
+    queue_mock_response!(socket, fstat, mock_fstat_res);
+    queue_mock_response!(socket, close, mock_close_res);
+    test_syscall_!(socket, test_execve);
   }
 }

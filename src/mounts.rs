@@ -1,10 +1,10 @@
-use std::{collections::HashMap, path::Path, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 use crate::sockets::Socket;
 
 pub struct Mount {
   pub path: Rc<Path>,
-  pub socket: Box<dyn Socket>
+  pub socket: Rc<RefCell<Box<dyn Socket>>>
 }
 
 pub struct Mounts {
@@ -14,8 +14,9 @@ pub struct Mounts {
 
 impl Mounts {
   pub fn new(mounts: HashMap<&Path, Box<dyn Socket>>) -> Mounts {
-    let mounts = mounts.into_iter().map(|(p, socket)| {
+    let mounts = mounts.into_iter().map(|(p, s)| {
       let path = Rc::<Path>::from(p);
+      let socket = Rc::new(RefCell::new(s));
       (path.clone(), Mount { path: path.clone(), socket })
     }).collect::<HashMap<Rc<Path>, Mount>>();
     let mut mountpoints = mounts.keys().map(|p| p.clone()).collect::<Vec<Rc<Path>>>();

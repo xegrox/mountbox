@@ -30,6 +30,13 @@ fn main() {
       mountsockets.insert(Path::new(dirp), Box::new(sockets::unix::UnixSocket::connect(&socketp).unwrap()));
     }
   }
+  let state = &mut State {
+    mounts: Mounts::new(mountsockets),
+    fd_allocator: FdAllocator::new(),
+    cwd: std::env::current_dir().unwrap(),
+    ..Default::default()
+  };
+
   match unsafe { fork().unwrap() } {
     ForkResult::Child => {
       ptrace::traceme().unwrap();
@@ -42,12 +49,7 @@ fn main() {
     }
 
     ForkResult::Parent { child } => {
-      server::run(&mut State {
-        mounts: Mounts::new(mountsockets),
-        fd_allocator: FdAllocator::new(),
-        cwd: std::env::current_dir().unwrap(),
-        ..Default::default()
-      }, child);
+      server::run(state, child);
     }
   }
 }
