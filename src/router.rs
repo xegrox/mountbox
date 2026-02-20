@@ -78,8 +78,8 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrac
           let mountpoint = mount.path.clone();
           syscalls::$mod::serialize_req(state, mountpoint.clone(), &relpath $(, $(parse_arg!($arg[$type])),*)?)?;
           let socket = state.mounts.get_mount_mut(&mountpoint).unwrap().socket.clone();
-          socket.borrow_mut().write(state.fbb.finished_data());
-          let response = socket.borrow_mut().read();
+          socket.borrow_mut().write(state.fbb.finished_data())?;
+          let response = socket.borrow_mut().read()?;
           let code = match syscalls::$mod::deserialize_res(state, mountpoint.clone(), &relpath, &response) {
             Ok(res) => {
               let (_res, code) = bool!($($res_has_code)?, {
@@ -121,8 +121,8 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrac
         state.fbb.reset();
         syscalls::$syscall::serialize_req(state, mountpoint.clone(), fd $(, $(parse_arg!($arg[$type])),*)?)?;
         let socket = &mut state.mounts.get_mount_mut(&mountpoint).unwrap().socket.clone();
-        socket.borrow_mut().write(state.fbb.finished_data());
-        let data = socket.borrow_mut().read();
+        socket.borrow_mut().write(state.fbb.finished_data())?;
+        let data = socket.borrow_mut().read()?;
         let code = match syscalls::$syscall::deserialize_res(state, mountpoint.clone(), fd, &data) {
           Ok(res) => {
             let (_res, code) = bool!($($res_has_code)?, {

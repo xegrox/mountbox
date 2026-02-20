@@ -1,4 +1,6 @@
+use anyhow::Result;
+
 pub trait Socket {
-  fn write(&mut self, data: &[u8]);
-  fn read(&mut self) -> Vec<u8>;
+  fn write(&mut self, data: &[u8]) -> Result<()>;
+  fn read(&mut self) -> Result<Vec<u8>>;
 }

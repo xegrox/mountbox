@@ -16,15 +16,15 @@ pub fn handler(state: &mut State, pid: Pid, mountpoint: Rc<Path>, path: &Path, w
   let mut memfile = unsafe { File::from_raw_fd(state.execve_fd as i32) };
   let fd = {
     open::serialize_req(state, mountpoint.clone(), path)?;
-    socket.borrow_mut().write(state.fbb.finished_data());
-    let data = socket.borrow_mut().read();
+    socket.borrow_mut().write(state.fbb.finished_data())?;
+    let data = socket.borrow_mut().read()?;
     open::deserialize_res(state, mountpoint.clone(), path, &data)?.1
   } as u16;
 
   let mut read =  |mut buf: &mut [u8]| -> Result<u64> {
     read::serialize_req(state, mountpoint.clone(), fd, buf.len())?;
-    socket.borrow_mut().write(state.fbb.finished_data());
-    let data = socket.borrow_mut().read();
+    socket.borrow_mut().write(state.fbb.finished_data())?;
+    let data = socket.borrow_mut().read()?;
     let result = read::deserialize_res(state, mountpoint.clone(), fd, &data);
     match result {
       Ok((data, code)) => {

@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use anyhow::Result;
 use mountbox::{fb, sockets::Socket};
 
 pub struct MockSocket<'a> {
@@ -26,18 +27,18 @@ impl Drop for MockSocket<'_> {
 }
 
 impl Socket for MockSocket<'_> {
-  fn write(&mut self, data: &[u8]) {
+  fn write(&mut self, data: &[u8]) -> Result<()> {
     if let Some((res, _)) = self.pair.front() {
-      res(data)
+      Ok(res(data))
     } else {
       let req = flatbuffers::root::<fb::req::Request>(data).unwrap();
       panic!("Unhandled request {}", req.operation_type().variant_name().unwrap())
     }
   }
 
-  fn read(&mut self) -> Vec<u8> {
+  fn read(&mut self) -> Result<Vec<u8>> {
     if let Some((_, req)) = self.pair.pop_front() {
-      req()
+      Ok(req())
     } else {
       unreachable!()
     }
