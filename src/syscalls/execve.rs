@@ -11,7 +11,7 @@ use crate::state::State;
 use crate::syscalls::{read, open};
 
 
-pub fn handler(state: &mut State, pid: Pid, mountpoint: Rc<Path>, path: &Path) -> Result<()> {
+pub fn handler(state: &mut State, pid: Pid, mountpoint: Rc<Path>, path: &Path, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   let socket = state.mounts.get_mount_mut(&mountpoint).unwrap().socket.clone();
   let mut memfile = unsafe { File::from_raw_fd(state.execve_fd as i32) };
   let fd = {
@@ -56,6 +56,6 @@ pub fn handler(state: &mut State, pid: Pid, mountpoint: Rc<Path>, path: &Path) -
   ptrace::getreg!(regs, arg3) = 0;
   ptrace::getreg!(regs, arg4) = nix::libc::AT_EMPTY_PATH as u64;
   ptrace::setregs(pid, regs)?;
-  ptrace::wait_syscall(pid)?;
+  wait_ptrace_ret()?;
   Ok(())
 }

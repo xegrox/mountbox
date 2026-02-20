@@ -29,7 +29,7 @@ macro_rules! to_bytes {
     };
 }
 
-pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<()> {
+pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
 
   macro_rules! bool {
     (true, $body:block, $_:block) => {
@@ -55,9 +55,9 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
         if let Some(mount) = mount {
           let relpath = std::path::Path::new("/").join(fullpath.strip_prefix(&mount.path).unwrap());
           let mountpoint = mount.path.clone();
-          syscalls::$syscall::handler(state, pid, mountpoint, &relpath $(, $(parse_arg!($arg[$type])),*)?)?;
+          syscalls::$syscall::handler(state, pid, mountpoint, &relpath, wait_ptrace_ret, $(, $(parse_arg!($arg[$type])),*)?)?;
         } else {
-          ptrace::wait_syscall(pid).unwrap();
+          wait_ptrace_ret()?;
         }
       }
     }
@@ -97,9 +97,17 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
             },
             Err(err) => err as u64
           };
-          ptrace::fake_syscall(pid, regs, code);
+          ptrace::setregs(pid, user_regs_struct {
+            orig_rax: u64::MAX,
+            ..regs
+          }).unwrap();
+          wait_ptrace_ret()?;
+          ptrace::setregs(pid, user_regs_struct {
+            rax: code,
+            ..ptrace::getregs(pid).unwrap()
+          }).unwrap();
         } else {
-          ptrace::wait_syscall(pid).unwrap();
+          wait_ptrace_ret()?;
         }
       }
     }};
@@ -132,9 +140,17 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
           },
           Err(err) => err as u64
         };
-        ptrace::fake_syscall(pid, regs, code);
+        ptrace::setregs(pid, user_regs_struct {
+          orig_rax: u64::MAX,
+          ..regs
+        }).unwrap();
+        wait_ptrace_ret()?;
+        ptrace::setregs(pid, user_regs_struct {
+          rax: code,
+          ..ptrace::getregs(pid).unwrap()
+        }).unwrap();
       } else {
-        ptrace::wait_syscall(pid).unwrap();
+        wait_ptrace_ret().unwrap();
       }
     }};
   }
@@ -158,7 +174,17 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
         },
         Err(err) => err as u64
       };
-      ptrace::fake_syscall(pid, regs, code);
+
+
+      ptrace::setregs(pid, user_regs_struct {
+        orig_rax: u64::MAX,
+        ..regs
+      }).unwrap();
+      wait_ptrace_ret()?;
+      ptrace::setregs(pid, user_regs_struct {
+        rax: code,
+        ..ptrace::getregs(pid).unwrap()
+      }).unwrap();
     }};
   }
 
@@ -180,7 +206,7 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid) -> Result<
     ptrace::syscall_nr!(getcwd) => route_all!(getcwd, result(string arg0[arg1])),
     ptrace::syscall_nr!(execve) => route_path_custom!(execve, arg0),
     _ => {
-      ptrace::wait_syscall(pid).unwrap();
+      wait_ptrace_ret()?;
     }
   }
   Ok(())

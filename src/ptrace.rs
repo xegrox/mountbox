@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
-pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct, sys::ptrace::setregs};
+pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct, sys::ptrace::{setregs, Options, traceme, setoptions, syscall}};
 use std::ffi::{c_long, c_void, CStr};
-use nix::sys::{ptrace, wait::wait};
+use nix::sys::ptrace;
 
 const LONG_LEN: usize = (c_long::BITS/8) as usize;
 
@@ -29,7 +29,9 @@ macro_rules! syscall_nr {
   (fstat) => { 5 };
   (lstat) => { 6 };
   (execve) => { 59 };
+  (exit) => { 60 };
   (getcwd) => { 79 };
+  (exit_group) => { 231 };
   (openat) => { 257 };
   (execveat) => { 322 };
   (statx) => { 332 };
@@ -37,15 +39,6 @@ macro_rules! syscall_nr {
 
 pub use getreg;
 pub use syscall_nr;
-
-pub fn traceme() -> Result<(), Errno> {
-  ptrace::traceme()
-}
-
-pub fn wait_syscall(pid: Pid) -> Result<(), Errno> {
-  ptrace::syscall(pid, None)?;
-  wait().map(drop)
-}
 
 pub fn getregs(pid: Pid) -> Result<user_regs_struct, Errno> {
   ptrace::getregs(pid)
@@ -80,17 +73,4 @@ pub fn write_bytes(pid: Pid, addr: u64, bytes: &[u8], buffer_size: usize) {
     ptrace::write(pid, (addr as usize + pos) as *mut c_void, c_long::from_ne_bytes(chunk)).unwrap();
     pos += LONG_LEN;
   }
-}
-
-pub fn fake_syscall(pid: Pid, regs: user_regs_struct, ret: u64) {
-  ptrace::setregs(pid, user_regs_struct {
-    orig_rax: u64::MAX,
-    ..regs
-  }).unwrap();
-  ptrace::syscall(pid, None).unwrap();
-  wait().unwrap();
-  ptrace::setregs(pid, user_regs_struct {
-    rax: ret,
-    ..ptrace::getregs(pid).unwrap()
-  }).unwrap();
 }

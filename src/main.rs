@@ -1,4 +1,4 @@
-use std::{collections::HashMap, os::unix::process::CommandExt, path::Path, process::{exit, Command}};
+use std::{collections::HashMap, os::unix::process::CommandExt, path::Path, process::{exit, Command, ExitCode}};
 use anyhow::{anyhow, Result};
 use mountbox::{fd_allocator::FdAllocator, mounts::Mounts, sockets, state::State};
 use mountbox::ptrace;
@@ -22,7 +22,7 @@ struct Cli {
   command: Vec<String>
 }
 
-fn main() {
+fn main() -> ExitCode {
   let args = Cli::parse();
   let mut mountsockets = HashMap::<&Path, Box<dyn sockets::Socket>>::new();
   if let Some(value) = &args.bind_unix_socket {
@@ -49,7 +49,8 @@ fn main() {
     }
 
     ForkResult::Parent { child } => {
-      server::run(state, child);
+      let code = server::run(state, child).unwrap();
+      return ExitCode::from(code);
     }
   }
 }

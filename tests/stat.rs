@@ -143,7 +143,7 @@ rusty_fork_test! {
   }
 
   #[test]
-  fn xstat_should_return_stat() {
+  fn statx_should_return_stat() {
     fn mock_res(size: u64, file_type: fb::res::FileType) -> impl Fn(&mut flatbuffers::FlatBufferBuilder) {
       move |fbb: &mut FlatBufferBuilder| {
         let stat = fb::res::Stat::create(fbb, &fb::res::StatArgs {

@@ -1,5 +1,4 @@
 use std::ffi::CString;
-
 use common::MockSocket;
 use mountbox::{fb, syscall_nr};
 use nix::libc;

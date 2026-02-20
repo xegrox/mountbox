@@ -1,31 +1,31 @@
 use std::collections::VecDeque;
-
 use mountbox::{fb, sockets::Socket};
 
-pub struct MockSocket {
-  pair: VecDeque<(Box<dyn Fn(&[u8])>, Box<dyn Fn() -> Vec<u8>>)>
+pub struct MockSocket<'a> {
+  pair: VecDeque<(Box<dyn Fn(&[u8]) + 'a>, Box<dyn Fn() -> Vec<u8> + 'a>)>
 }
 
-impl MockSocket {
-  pub fn new() -> MockSocket {
+impl<'a> MockSocket<'a> {
+  pub fn new() -> MockSocket<'a> {
     MockSocket { pair: VecDeque::new() }
   }
 
+  #[allow(unused)]
   pub fn queue_pair<R, T>(&mut self, req: R, res: T)
   where
-    R: Fn(&[u8]) + 'static,
-    T: Fn() -> Vec<u8> + 'static {
+    R: Fn(&[u8]) + 'a,
+    T: Fn() -> Vec<u8> + 'a {
     self.pair.push_back((Box::new(req), Box::new(res)));
   }
 }
 
-impl Drop for MockSocket {
+impl Drop for MockSocket<'_> {
   fn drop(&mut self) {
-    assert!(self.pair.is_empty(), "{} unhandled mock reply", self.pair.len())
+    assert!(self.pair.is_empty(), "{} unhandled mock reply", self.pair.len());
   }
 }
 
-impl Socket for MockSocket {
+impl Socket for MockSocket<'_> {
   fn write(&mut self, data: &[u8]) {
     if let Some((res, _)) = self.pair.front() {
       res(data)
@@ -54,7 +54,7 @@ macro_rules! queue_mock_response {
           .expect(&format!("Expected {} operation, got {}", stringify!($req_type), req.operation_type().variant_name().unwrap()));
       }
       $req(op);)?
-    }, || {
+    }, move || {
       let fbb = &mut flatbuffers::FlatBufferBuilder::new();
       $res(fbb);
       fbb.finished_data().to_vec()
@@ -68,19 +68,24 @@ macro_rules! test_syscall {
     let _s = &mut mountbox::state::State { ..Default::default() };
     $(let _s = $state;)?
   
-    let socket: Box<dyn mountbox::sockets::Socket> = Box::new($socket);
     match unsafe { nix::unistd::fork().unwrap() } {
       nix::unistd::ForkResult::Child => {
         mountbox::ptrace::traceme().unwrap();
         unsafe { nix::libc::raise(nix::libc::SIGTRAP); }
-        $test_syscall();
-        std::process::exit(0);
+        if let Err(_) = std::panic::catch_unwind($test_syscall) {
+          std::process::exit(101);
+        } else {
+          std::process::exit(0);
+        }
       }
   
       nix::unistd::ForkResult::Parent { child } => {
-        let mounts = mountbox::mounts::Mounts::new(std::collections::HashMap::from([(std::path::Path::new("/test"), socket)]));
+        let socket: Box<dyn mountbox::sockets::Socket> = Box::new($socket);
+        let mount_path = std::path::Path::new("/test");
+        let mounts = mountbox::mounts::Mounts::new(std::collections::HashMap::from([(mount_path, socket)]));
         _s.mounts = mounts;
-        mountbox::server::run(_s, child);
+        let code = mountbox::server::run(_s, child).unwrap();
+        assert!(code != 101, "panic in syscall test");
       }
     }
   };
