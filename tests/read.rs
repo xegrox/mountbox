@@ -1,4 +1,4 @@
-use std::{path::Path, rc::Rc};
+use std::{path::Path, sync::{Arc, RwLock}};
 
 use common::MockSocket;
 use mountbox::{fb, fd_allocator::FdAllocator, state::State, syscall_nr};
@@ -39,10 +39,14 @@ fn read_returns_data() {
     }
   }
 
-  let mut fd_allocator = FdAllocator::new();
-  let fd = fd_allocator.allocate_fd(Rc::from(Path::new("/test")), "test_id").unwrap();
-  let mut state = State { fd_allocator, ..Default::default() };
   let mut socket = MockSocket::new();
   queue_mock_response!(socket, read, mock_res, test_req);
-  test_syscall!(socket, test_read(fd), &mut state);
+  
+  
+  let mount_path = std::path::Path::new("/test");
+  let mounts = mountbox::mounts::Mounts::new(vec![(mount_path, Box::new(socket))]);
+  let fd_allocator = RwLock::new(FdAllocator::new());
+  let fd = fd_allocator.write().unwrap().allocate_fd(Arc::from(Path::new("/test")), "test_id").unwrap();
+  let state = Arc::new(State { mounts, fd_allocator, ..Default::default() });
+  test_syscall!(state, test_read(fd));
 }

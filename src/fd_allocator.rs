@@ -1,11 +1,11 @@
-use std::{collections::HashMap, fs::File, os::fd::{FromRawFd, IntoRawFd, OwnedFd}, path::Path, rc::Rc};
+use std::{collections::HashMap, fs::File, os::fd::{FromRawFd, IntoRawFd, OwnedFd}, path::Path, sync::Arc};
 
 use anyhow::Result;
 
 pub struct FdDesc {
   pub fd: u16,
   pub id: String,
-  pub mountpoint: Rc<Path>
+  pub mountpoint: Arc<Path>
 }
 
 pub struct FdAllocator {
@@ -22,7 +22,7 @@ impl FdAllocator {
     self.fds.get(&fd)
   }
 
-  pub fn allocate_fd(&mut self, mountpoint: Rc<Path>, id: &str) -> Result<u16> {
+  pub fn allocate_fd(&mut self, mountpoint: Arc<Path>, id: &str) -> Result<u16> {
     let fd = File::open("/dev/null")?.into_raw_fd() as u16;
     self.fds.insert(fd, FdDesc {
       fd,

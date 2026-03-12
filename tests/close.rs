@@ -1,5 +1,4 @@
-use std::{path::Path, rc::Rc};
-
+use std::{path::Path, sync::{Arc, RwLock}};
 use common::MockSocket;
 use mountbox::{fb, fd_allocator::FdAllocator, state::State, syscall_nr};
 use nix::{fcntl::fcntl, libc};
@@ -35,13 +34,16 @@ fn close_should_close_fd() {
     }
   }
   
-  let mut fd_allocator = FdAllocator::new();
-  let fd = fd_allocator.allocate_fd(Rc::from(Path::new("/test")), "test_id").unwrap();
-  let mut state = State { fd_allocator, ..Default::default() };
+  let fd_allocator = RwLock::new(FdAllocator::new());
+  let fd = fd_allocator.write().unwrap().allocate_fd(Arc::from(Path::new("/test")), "test_id").unwrap();
   
   let mut socket = MockSocket::new();
   queue_mock_response!(socket, close, mock_res, test_req);
-  test_syscall!(socket, test_close(fd), &mut state);
-  assert!(state.fd_allocator.get_desc_for_fd(fd).is_none(), "fd still stored in fdallocator");
+  
+  let mount_path = std::path::Path::new("/test");
+  let mounts = mountbox::mounts::Mounts::new(vec![(mount_path, Box::new(socket))]);
+  let state = Arc::new(State { mounts, fd_allocator, ..Default::default() });
+  test_syscall!(state.clone(), test_close(fd));
+  assert!(state.fd_allocator.read().unwrap().get_desc_for_fd(fd).is_none(), "fd still stored in fdallocator");
   assert_eq!(fcntl(fd.into(), nix::fcntl::FcntlArg::F_GETFL), Err(nix::errno::Errno::EBADF), "fd not closed");
 }

@@ -3,7 +3,7 @@ use anyhow::Result;
 use mountbox::{fb, sockets::Socket};
 
 pub struct MockSocket<'a> {
-  pair: VecDeque<(Box<dyn Fn(&[u8]) + 'a>, Box<dyn Fn() -> Vec<u8> + 'a>)>
+  pair: VecDeque<(Box<dyn Fn(&[u8]) + Send + Sync + 'a>, Box<dyn Fn() -> Vec<u8> + Send + Sync + 'a>)>
 }
 
 impl<'a> MockSocket<'a> {
@@ -14,8 +14,8 @@ impl<'a> MockSocket<'a> {
   #[allow(unused)]
   pub fn queue_pair<R, T>(&mut self, req: R, res: T)
   where
-    R: Fn(&[u8]) + 'a,
-    T: Fn() -> Vec<u8> + 'a {
+    R: Fn(&[u8]) + Send + Sync + 'a,
+    T: Fn() -> Vec<u8> + Send + Sync + 'a {
     self.pair.push_back((Box::new(req), Box::new(res)));
   }
 }
@@ -65,14 +65,10 @@ macro_rules! queue_mock_response {
 
 #[macro_export]
 macro_rules! test_syscall {
-  ($socket:expr, $test_syscall:expr $(, $state:expr)?) => {
-    let _s = &mut mountbox::state::State { ..Default::default() };
-    $(let _s = $state;)?
-  
+  ($state:expr, $test_syscall:expr) => {
     match unsafe { nix::unistd::fork().unwrap() } {
       nix::unistd::ForkResult::Child => {
-        mountbox::ptrace::traceme().unwrap();
-        unsafe { nix::libc::raise(nix::libc::SIGTRAP); }
+        unsafe { nix::libc::raise(nix::libc::SIGSTOP); }
         if let Err(_) = std::panic::catch_unwind($test_syscall) {
           std::process::exit(101);
         } else {
@@ -81,11 +77,7 @@ macro_rules! test_syscall {
       }
   
       nix::unistd::ForkResult::Parent { child } => {
-        let socket: Box<dyn mountbox::sockets::Socket> = Box::new($socket);
-        let mount_path = std::path::Path::new("/test");
-        let mounts = mountbox::mounts::Mounts::new(std::collections::HashMap::from([(mount_path, socket)]));
-        _s.mounts = mounts;
-        let code = mountbox::server::run(_s, child).unwrap();
+        let code = mountbox::tracer::attach($state, child).unwrap();
         assert!(code != 101, "panic in syscall test");
       }
     }

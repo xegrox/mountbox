@@ -1,4 +1,4 @@
-use std::{ffi::CString, mem::MaybeUninit, path::Path, rc::Rc};
+use std::{ffi::CString, mem::MaybeUninit, path::Path, sync::{Arc, RwLock}};
 
 use common::MockSocket;
 use flatbuffers::FlatBufferBuilder;
@@ -47,7 +47,11 @@ rusty_fork_test! {
     let mut socket = MockSocket::new();
     queue_mock_response!(socket, stat, mock_res(24, fb::res::FileType::File), test_req);
     queue_mock_response!(socket, stat, mock_res(0, fb::res::FileType::Directory), test_req);
-    test_syscall!(socket, || {
+
+    let mount_path = std::path::Path::new("/test");
+    let mounts = mountbox::mounts::Mounts::new(vec![(mount_path, Box::new(socket))]);
+    let state = Arc::new(State { mounts, ..Default::default() });
+    test_syscall!(state, || {
       test_stat(24, libc::S_IFREG);
       test_stat(0, libc::S_IFDIR);
     });
@@ -86,17 +90,20 @@ rusty_fork_test! {
     }
 
 
-    let mut fd_allocator = FdAllocator::new();
-    let fstat_fd = fd_allocator.allocate_fd(Rc::from(Path::new("/test")), "fstat_id").unwrap();
-    let mut state = State { fd_allocator, ..Default::default() };
-
+    
     let mut socket = MockSocket::new();
     queue_mock_response!(socket, fstat, mock_res(24, fb::res::FileType::File), test_req);
     queue_mock_response!(socket, fstat, mock_res(0, fb::res::FileType::Directory), test_req);
-    test_syscall!(socket, || {
+    
+    let mount_path = std::path::Path::new("/test");
+    let mounts = mountbox::mounts::Mounts::new(vec![(mount_path, Box::new(socket))]);
+    let fd_allocator = RwLock::new(FdAllocator::new());
+    let fstat_fd = fd_allocator.write().unwrap().allocate_fd(Arc::from(Path::new("/test")), "fstat_id").unwrap();
+    let state = Arc::new(State { mounts, fd_allocator, ..Default::default() });
+    test_syscall!(state, || {
       test_fstat(fstat_fd, 24, libc::S_IFREG);
       test_fstat(fstat_fd, 0, libc::S_IFDIR);
-    }, &mut state);
+    });
   }
 
   #[test]
@@ -136,7 +143,11 @@ rusty_fork_test! {
     let mut socket = MockSocket::new();
     queue_mock_response!(socket, stat, mock_res(24, fb::res::FileType::File), test_req);
     queue_mock_response!(socket, stat, mock_res(0, fb::res::FileType::Directory), test_req);
-    test_syscall!(socket, || {
+
+    let mount_path = std::path::Path::new("/test");
+    let mounts = mountbox::mounts::Mounts::new(vec![(mount_path, Box::new(socket))]);
+    let state = Arc::new(State { mounts, ..Default::default() });
+    test_syscall!(state, || {
       test_lstat(24, libc::S_IFREG);
       test_lstat(0, libc::S_IFDIR);
     });
@@ -178,11 +189,14 @@ rusty_fork_test! {
     let mut socket = MockSocket::new();
     queue_mock_response!(socket, stat, mock_res(24, fb::res::FileType::File), test_req);
     queue_mock_response!(socket, stat, mock_res(0, fb::res::FileType::Directory), test_req);
-    test_syscall!(socket, || {
+
+    let mount_path = std::path::Path::new("/test");
+    let mounts = mountbox::mounts::Mounts::new(vec![(mount_path, Box::new(socket))]);
+    let state = Arc::new(State { mounts, ..Default::default() });
+    test_syscall!(state, || {
       test_statx(24, libc::S_IFREG);
       test_statx(0, libc::S_IFDIR);
     });
-
   }
 
 }

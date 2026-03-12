@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct, sys::ptrace::{setregs, Options, traceme, setoptions, syscall}};
+pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct, sys::ptrace::{attach, setregs, Options, traceme, setoptions, syscall}};
 use std::ffi::{c_long, c_void, CStr};
 use nix::sys::ptrace;
 
@@ -28,6 +28,8 @@ macro_rules! syscall_nr {
   (stat) => { 4 };
   (fstat) => { 5 };
   (lstat) => { 6 };
+  (fork) => { 57 };
+  (vfork) => { 58 };
   (execve) => { 59 };
   (exit) => { 60 };
   (getcwd) => { 79 };

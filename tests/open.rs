@@ -1,7 +1,7 @@
-use std::ffi::CString;
+use std::{ffi::CString, sync::Arc};
 
 use common::MockSocket;
-use mountbox::{fb, syscall_nr};
+use mountbox::{fb, state::State, syscall_nr};
 use nix::libc;
 
 mod common;
@@ -45,7 +45,11 @@ fn open_should_allocate_fd() {
   let mut socket = MockSocket::new();
   queue_mock_response!(socket, open, mock_res, test_req);
   queue_mock_response!(socket, open, mock_res, test_req);
-  test_syscall!(socket, || {
+
+  let mount_path = std::path::Path::new("/test");
+  let mounts = mountbox::mounts::Mounts::new(vec![(mount_path, Box::new(socket))]);
+  let state = Arc::new(State { mounts, ..Default::default() });
+  test_syscall!(state, || {
     test_open();
     test_openat();
   });

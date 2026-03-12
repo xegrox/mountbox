@@ -1,8 +1,9 @@
 use std::ffi::CString;
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
-use std::os::fd::FromRawFd;
-use std::{path::Path, rc::Rc};
+use std::os::fd::{AsRawFd, FromRawFd};
+use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use nix::unistd::Pid;
@@ -11,20 +12,20 @@ use crate::state::State;
 use crate::syscalls::{read, open};
 
 
-pub fn handler(state: &mut State, pid: Pid, mountpoint: Rc<Path>, path: &Path, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
-  let socket = state.mounts.get_mount_mut(&mountpoint).unwrap().socket.clone();
-  let mut memfile = unsafe { File::from_raw_fd(state.execve_fd as i32) };
+pub fn handler(state: &State, pid: Pid, mountpoint: Arc<Path>, path: &Path, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
+  let mut memfile = unsafe { File::from_raw_fd(*state.execve_fd.read().unwrap() as i32) };
+  let mut socket = state.mounts.get_mount(&mountpoint).unwrap().socket.lock().unwrap();
   let fd = {
     open::serialize_req(state, mountpoint.clone(), path)?;
-    socket.borrow_mut().write(state.fbb.finished_data())?;
-    let data = socket.borrow_mut().read()?;
+    socket.write(state.fbb.lock().unwrap().finished_data())?;
+    let data = socket.read()?;
     open::deserialize_res(state, mountpoint.clone(), path, &data)?.1
   } as u16;
 
   let mut read =  |mut buf: &mut [u8]| -> Result<u64> {
     read::serialize_req(state, mountpoint.clone(), fd, buf.len())?;
-    socket.borrow_mut().write(state.fbb.finished_data())?;
-    let data = socket.borrow_mut().read()?;
+    socket.write(state.fbb.lock().unwrap().finished_data())?;
+    let data = socket.read()?;
     let result = read::deserialize_res(state, mountpoint.clone(), fd, &data);
     match result {
       Ok((data, code)) => {
@@ -49,7 +50,7 @@ pub fn handler(state: &mut State, pid: Pid, mountpoint: Rc<Path>, path: &Path, w
 
   let mut regs = ptrace::getregs(pid)?;
   ptrace::getreg!(regs, syscall_nr) = syscall_nr!(execveat);
-  ptrace::getreg!(regs, arg0) = state.execve_fd as u64;
+  ptrace::getreg!(regs, arg0) = memfile.as_raw_fd() as u64;
   let empty = CString::new("")?;
   ptrace::getreg!(regs, arg1) = empty.as_ptr() as u64;
   ptrace::getreg!(regs, arg2) = 0;

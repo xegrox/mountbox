@@ -196,6 +196,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
+name = "gettid"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96d9ea5ee7dc59a2244fa486d8f00472f8d3e4c8c5f7f24a8551559ef3f3530e"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -234,6 +243,7 @@ dependencies = [
  "flatbuffers",
  "flatc",
  "flatc-rust",
+ "gettid",
  "nix",
  "paste",
  "rusty-fork",

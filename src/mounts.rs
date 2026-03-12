@@ -1,25 +1,25 @@
-use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
+use std::{collections::HashMap, path::Path, sync::{Arc, Mutex}};
 
 use crate::sockets::Socket;
 
 pub struct Mount {
-  pub path: Rc<Path>,
-  pub socket: Rc<RefCell<Box<dyn Socket>>>
+  pub path: Arc<Path>,
+  pub socket: Mutex<Box<dyn Socket>>
 }
 
 pub struct Mounts {
-  mountpoints: Vec<Rc<Path>>,
-  mounts: HashMap<Rc<Path>, Mount>
+  mountpoints: Vec<Arc<Path>>,
+  mounts: HashMap<Arc<Path>, Mount>
 }
 
 impl Mounts {
-  pub fn new(mounts: HashMap<&Path, Box<dyn Socket>>) -> Mounts {
+  pub fn new(mounts: Vec<(&Path, Box<dyn Socket>)>) -> Mounts {
     let mounts = mounts.into_iter().map(|(p, s)| {
-      let path = Rc::<Path>::from(p);
-      let socket = Rc::new(RefCell::new(s));
+      let path = Arc::<Path>::from(p);
+      let socket = Mutex::new(s);
       (path.clone(), Mount { path: path.clone(), socket })
-    }).collect::<HashMap<Rc<Path>, Mount>>();
-    let mut mountpoints = mounts.keys().map(|p| p.clone()).collect::<Vec<Rc<Path>>>();
+    }).collect::<HashMap<Arc<Path>, Mount>>();
+    let mut mountpoints = mounts.keys().map(|p| p.clone()).collect::<Vec<Arc<Path>>>();
     mountpoints.sort_unstable_by(|a, b| { a.cmp(b) });
     Mounts { mountpoints, mounts }
   }
@@ -33,8 +33,8 @@ impl Mounts {
     None
   }
 
-  pub fn get_mount_mut(&mut self, path: &Path) -> Option<&mut Mount> {
-    self.mounts.get_mut(path)
+  pub fn get_mount(&self, path: &Path) -> Option<&Mount> {
+    self.mounts.get(path)
   }
 
 }

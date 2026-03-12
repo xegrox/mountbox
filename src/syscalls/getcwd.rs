@@ -1,9 +1,7 @@
-use std::ffi::OsStr;
-
 use nix::errno::Errno;
 
 use crate::state::State;
 
-pub fn handler<'a>(state: &'a mut State) -> Result<&'a OsStr, Errno> {
-  Ok(state.cwd.as_os_str())
+pub fn handler(state: &State) -> Result<String, Errno> {
+  Ok(state.cwd.read().unwrap().clone().into_os_string().into_string().unwrap())
 }

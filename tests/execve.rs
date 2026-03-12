@@ -1,6 +1,6 @@
-use std::ffi::CString;
+use std::{ffi::CString, sync::Arc};
 use common::MockSocket;
-use mountbox::{fb, syscall_nr};
+use mountbox::{fb, state::State, syscall_nr};
 use nix::libc;
 
 mod common;
@@ -37,7 +37,7 @@ fn execve_noarg_noenv_should_succeed() {
   }
 
   fn mock_read_res(fbb: &mut flatbuffers::FlatBufferBuilder) {
-    let script = String::from("#!/bin/sh\necho hello");
+    let script = format!("#!/bin/sh\necho hi");
     let fb_data = fbb.create_vector(script.as_bytes());
     let fb_read = fb::res::Read::create(fbb, &fb::res::ReadArgs {
       data: Some(fb_data)
@@ -91,5 +91,9 @@ fn execve_noarg_noenv_should_succeed() {
   queue_mock_response!(socket, read, mock_read_res_eof, test_read_req);
   queue_mock_response!(socket, fstat, mock_fstat_res);
   queue_mock_response!(socket, close, mock_close_res);
-  test_syscall!(socket, test_execve);
+
+  let mount_path = std::path::Path::new("/test");
+  let mounts = mountbox::mounts::Mounts::new(vec![(mount_path, Box::new(socket))]);
+  let state = Arc::new(State { mounts, ..Default::default() });
+  test_syscall!(state, test_execve);
 }

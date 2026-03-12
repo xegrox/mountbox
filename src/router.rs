@@ -1,4 +1,3 @@
-use std::os::unix::ffi::OsStrExt;
 use crate::{ptrace, state::State, syscalls};
 use anyhow::Result;
 use nix::{libc::user_regs_struct, unistd::Pid};
@@ -29,7 +28,7 @@ macro_rules! to_bytes {
     };
 }
 
-pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
+pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
 
   macro_rules! bool {
     (true, $body:block, $_:block) => {
@@ -45,17 +44,17 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrac
 
   macro_rules! route_path_custom {
     ($syscall:tt, $path_arg:tt$(@$dirfd_arg:tt)? $(, args($($arg:tt: $type:tt)*))?) => {
-      if let Ok(path) = crate::ptrace::read_str(pid, ptrace::getreg!(regs, $path_arg)) {
+      if let Ok(path) = crate::ptrace::read_str(tid, ptrace::getreg!(regs, $path_arg)) {
         $(
           let dirfd = ptrace::getreg!(regs, $dirfd_arg) as i32;
           let fullpath = state.dirfd_resolver.resolve(dirfd, &path).join(state.cwd.join(path));
         )?
-        el!(let fullpath = state.cwd.join(path), $($dirfd_arg)?);
+        el!(let fullpath = state.cwd.read().unwrap().join(path), $($dirfd_arg)?);
         let mount = state.mounts.get_mount_of_path(fullpath.as_path());
         if let Some(mount) = mount {
           let relpath = std::path::Path::new("/").join(fullpath.strip_prefix(&mount.path).unwrap());
           let mountpoint = mount.path.clone();
-          syscalls::$syscall::handler(state, pid, mountpoint, &relpath, wait_ptrace_ret, $(, $(parse_arg!($arg[$type])),*)?)?;
+          syscalls::$syscall::handler(state, tid, mountpoint, &relpath, wait_ptrace_ret, $(, $(parse_arg!($arg[$type])),*)?)?;
         } else {
           wait_ptrace_ret()?;
         }
@@ -65,21 +64,22 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrac
   
   macro_rules! route_path {
     ($mod:tt, $path_arg:tt$(@$dirfd_arg:tt)? $(, args($($arg:tt: $type:tt)*))? $(, result($res_type:tt $res_arg:tt $([$res_len_arg:tt])?))?  $(, result_code=$res_has_code:tt)?) => {{
-      if let Ok(path) = crate::ptrace::read_str(pid, ptrace::getreg!(regs, $path_arg)) {
+      if let Ok(path) = crate::ptrace::read_str(tid, ptrace::getreg!(regs, $path_arg)) {
+        let cwd = state.cwd.read().unwrap();
         $(
           let dirfd = ptrace::getreg!(regs, $dirfd_arg) as i32;
-          let fullpath = state.dirfd_resolver.resolve(pid, dirfd, &path).join(state.cwd.join(path));
+          let fullpath = state.dirfd_resolver.resolve(tid, dirfd, &path).join(cwd.join(path));
         )?
-        el!(let fullpath = state.cwd.join(path), $($dirfd_arg)?);
+        el!(let fullpath = cwd.join(path), $($dirfd_arg)?);
         let mount = state.mounts.get_mount_of_path(fullpath.as_path());
         if let Some(mount) = mount {
-          state.fbb.reset();
           let relpath = std::path::Path::new("/").join(fullpath.strip_prefix(&mount.path).unwrap());
           let mountpoint = mount.path.clone();
           syscalls::$mod::serialize_req(state, mountpoint.clone(), &relpath $(, $(parse_arg!($arg[$type])),*)?)?;
-          let socket = state.mounts.get_mount_mut(&mountpoint).unwrap().socket.clone();
-          socket.borrow_mut().write(state.fbb.finished_data())?;
-          let response = socket.borrow_mut().read()?;
+          let mut socket_guard = state.mounts.get_mount(&mountpoint).unwrap().socket.lock().unwrap();
+          socket_guard.write(state.fbb.lock().unwrap().finished_data())?;
+          let response = socket_guard.read()?;
+          drop(socket_guard);
           let code = match syscalls::$mod::deserialize_res(state, mountpoint.clone(), &relpath, &response) {
             Ok(res) => {
               let (_res, code) = bool!($($res_has_code)?, {
@@ -91,20 +91,20 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrac
                 let bytes = to_bytes!(&_res, $res_type);
                 $(let len = ptrace::getreg!(regs, $res_len_arg) as usize;)?
                 el!(let len = bytes.len(), $($res_len_arg)?);
-                ptrace::write_bytes(pid, ptrace::getreg!(regs, $res_arg), bytes, len);
+                ptrace::write_bytes(tid, ptrace::getreg!(regs, $res_arg), bytes, len);
               )?
               code
             },
             Err(err) => err as u64
           };
-          ptrace::setregs(pid, user_regs_struct {
+          ptrace::setregs(tid, user_regs_struct {
             orig_rax: u64::MAX,
             ..regs
           }).unwrap();
           wait_ptrace_ret()?;
-          ptrace::setregs(pid, user_regs_struct {
+          ptrace::setregs(tid, user_regs_struct {
             rax: code,
-            ..ptrace::getregs(pid).unwrap()
+            ..ptrace::getregs(tid).unwrap()
           }).unwrap();
         } else {
           wait_ptrace_ret()?;
@@ -116,13 +116,15 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrac
   macro_rules! route_fd {
     ($syscall:tt, $fd_arg:tt $(, args($($arg:tt: $type:tt)*))? $(, result($res_type:tt $res_arg:tt $([$res_len_arg:tt])?))? $(, result_code=$res_has_code:tt)?) => {{
       let fd = ptrace::getreg!(regs, $fd_arg).try_into().unwrap();
-      if let Some(fd_desc) = state.fd_allocator.get_desc_for_fd(fd) {
+      let fd_alloc_guard = state.fd_allocator.read().unwrap();
+      if let Some(fd_desc) = fd_alloc_guard.get_desc_for_fd(fd) {
         let mountpoint = fd_desc.mountpoint.clone();
-        state.fbb.reset();
+        drop(fd_alloc_guard);
         syscalls::$syscall::serialize_req(state, mountpoint.clone(), fd $(, $(parse_arg!($arg[$type])),*)?)?;
-        let socket = &mut state.mounts.get_mount_mut(&mountpoint).unwrap().socket.clone();
-        socket.borrow_mut().write(state.fbb.finished_data())?;
-        let data = socket.borrow_mut().read()?;
+        let mut socket_guard = state.mounts.get_mount(&mountpoint).unwrap().socket.lock().unwrap();
+        socket_guard.write(state.fbb.lock().unwrap().finished_data())?;
+        let data = socket_guard.read()?;
+        drop(socket_guard);
         let code = match syscalls::$syscall::deserialize_res(state, mountpoint.clone(), fd, &data) {
           Ok(res) => {
             let (_res, code) = bool!($($res_has_code)?, {
@@ -134,20 +136,20 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrac
               let bytes = to_bytes!(&_res, $res_type);
               $(let len = ptrace::getreg!(regs, $res_len_arg) as usize;)?
               el!(let len = bytes.len(), $($res_len_arg)?);
-              ptrace::write_bytes(pid, ptrace::getreg!(regs, $res_arg), bytes, len);
+              ptrace::write_bytes(tid, ptrace::getreg!(regs, $res_arg), bytes, len);
             )?
             code
           },
           Err(err) => err as u64
         };
-        ptrace::setregs(pid, user_regs_struct {
+        ptrace::setregs(tid, user_regs_struct {
           orig_rax: u64::MAX,
           ..regs
         }).unwrap();
         wait_ptrace_ret()?;
-        ptrace::setregs(pid, user_regs_struct {
+        ptrace::setregs(tid, user_regs_struct {
           rax: code,
-          ..ptrace::getregs(pid).unwrap()
+          ..ptrace::getregs(tid).unwrap()
         }).unwrap();
       } else {
         wait_ptrace_ret().unwrap();
@@ -168,7 +170,7 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrac
             let bytes = to_bytes!(&_res, $res_type);
             $(let len = ptrace::getreg!(regs, $res_len_arg) as usize;)?
             el!(let len = bytes.len(), $($res_len_arg)?);
-            ptrace::write_bytes(pid, ptrace::getreg!(regs, $res_arg), bytes, len);
+            ptrace::write_bytes(tid, ptrace::getreg!(regs, $res_arg), bytes, len);
           )?
           code
         },
@@ -176,14 +178,14 @@ pub fn route<'a>(state: &mut State, regs: user_regs_struct, pid: Pid, wait_ptrac
       };
 
 
-      ptrace::setregs(pid, user_regs_struct {
+      ptrace::setregs(tid, user_regs_struct {
         orig_rax: u64::MAX,
         ..regs
       }).unwrap();
       wait_ptrace_ret()?;
-      ptrace::setregs(pid, user_regs_struct {
+      ptrace::setregs(tid, user_regs_struct {
         rax: code,
-        ..ptrace::getregs(pid).unwrap()
+        ..ptrace::getregs(tid).unwrap()
       }).unwrap();
     }};
   }
