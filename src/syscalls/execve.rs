@@ -14,7 +14,7 @@ use crate::syscalls::{read, open};
 
 pub fn handler(state: &State, pid: Pid, mountpoint: Arc<Path>, path: &Path, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   let mut memfile = unsafe { File::from_raw_fd(*state.execve_fd.read().unwrap() as i32) };
-  let mut socket = state.mounts.get_mount(&mountpoint).unwrap().socket.lock().unwrap();
+  let mut socket = state.mounts.get_mount(&mountpoint).unwrap().plugin.lock().unwrap();
   let fd = {
     open::serialize_req(state, mountpoint.clone(), path)?;
     socket.write(state.fbb.lock().unwrap().finished_data())?;

@@ -11,8 +11,8 @@ pub fn serialize_req(state: &State, _mountpoint: Arc<Path>, fd: u16) -> Result<(
   let mut fbb = state.fbb.lock().unwrap();
   fbb.reset();
   let fd_alloc = state.fd_allocator.read().unwrap();
-  let fd_desc = fd_alloc.get_desc_for_fd(fd).ok_or(anyhow!("Failed to find fd: {}", fd))?;
-  let fb_fd_id = fbb.create_string(&fd_desc.id);
+  let fd_desc = fd_alloc.get_file_info(fd).ok_or(anyhow!("Failed to find fd: {}", fd))?;
+  let fb_fd_id = fbb.create_string(&fd_desc.fh);
   let fb_fd = req::Fd::create(&mut fbb, &req::FdArgs {
     id: Some(fb_fd_id)
   });

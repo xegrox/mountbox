@@ -1,56 +1,36 @@
-use std::{ffi::CString, sync::Arc};
-
-use common::MockSocket;
-use mountbox::{fb, state::State, syscall_nr};
-use nix::libc;
+use std::{ffi::CString, io::{Read, Write}, path::PathBuf};
+use common::raw;
+use mountbox::{syscall_nr, tracer};
+use nix::{fcntl::{fcntl, FcntlArg::F_GETFD}, libc};
 
 mod common;
 
+create_plugin!(open_should_allocate_fd_plugin, open, |path: *const std::os::raw::c_char| -> std::os::raw::c_int {
+  let path = unsafe { std::ffi::CStr::from_ptr(path).to_str().unwrap() };
+  assert_eq!(path, "/open");
+  return 0;
+});
+
 #[test]
 fn open_should_allocate_fd() {
-
-  fn test_req(open: fb::req::Open) {
-    assert_eq!(open.path(), "/open");
-  }
-
-  fn mock_res(fbb: &mut flatbuffers::FlatBufferBuilder) {
-    let fb_id = Some(fbb.create_string("test_id"));
-    let fb_fd = fb::res::Fd::create(fbb, &fb::res::FdArgs {
-      id: fb_id
-    });
-    let res = fb::res::Response::create(fbb, &fb::res::ResponseArgs {
-      payload_type: fb::res::Payload::Fd,
-      payload: Some(fb_fd.as_union_value()),
-      error: None
-    });
-    fbb.finish(res, None);
-  }
-
-  fn test_open() {
+  let (mut r, mut w) = std::io::pipe().unwrap();
+  let child = run_child!(move || {
     unsafe {
       let path = CString::new("/test/open").unwrap();
-      let open_fd = libc::syscall(syscall_nr!(open), path.clone());
+      let open_fd = libc::syscall(syscall_nr!(open), path.as_ptr());
       assert!(open_fd > 0);
+      w.write(&open_fd.to_ne_bytes()).unwrap();
     };
-  }
-
-  fn test_openat() {
-    unsafe {
-      let path = CString::new("/test/open").unwrap();
-      let openat_fd = libc::syscall(syscall_nr!(openat), libc::AT_FDCWD, path);
-      assert!(openat_fd > 0);
-    }
-  }
-
-  let mut socket = MockSocket::new();
-  queue_mock_response!(socket, open, mock_res, test_req);
-  queue_mock_response!(socket, open, mock_res, test_req);
-
-  let mount_path = std::path::Path::new("/test");
-  let mounts = mountbox::mounts::Mounts::new(vec![(mount_path, Box::new(socket))]);
-  let state = Arc::new(State { mounts, ..Default::default() });
-  test_syscall!(state, || {
-    test_open();
-    test_openat();
   });
+  let state = create_state!("/test", open_should_allocate_fd_plugin);
+  let code = tracer::attach(state.clone(), child).unwrap();
+  assert_eq!(code, 0);
+  let mount = state.mounts.get_mount(&PathBuf::from("/test")).unwrap();
+  let buf = &mut [0u8; 8];
+  r.read(buf).unwrap();
+  let fd = i64::from_ne_bytes(*buf);
+  let fd_info = mount.get_fd_info(fd as u16);
+  assert!(fd_info.is_some());
+  assert_eq!(fd_info.unwrap().path, PathBuf::from("/open"));
+  assert!(fcntl(fd as i32, F_GETFD).unwrap() != -1);
 }

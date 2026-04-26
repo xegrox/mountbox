@@ -1,6 +1,7 @@
-use std::{os::unix::process::CommandExt, path::Path, process::{exit, Command}, sync::{Arc, RwLock}};
+use std::{os::unix::process::CommandExt, path::PathBuf, process::{exit, Command}, sync::{Arc, OnceLock, RwLock}};
 use anyhow::{anyhow, Result};
-use mountbox::{mounts::Mounts, sockets, state::State};
+use dlopen::symbor::Library;
+use mountbox::{mounts::Mounts, plugin::Plugin, state::State};
 use mountbox::tracer;
 use nix::{libc::{raise, SIGSTOP}, unistd::{fork, ForkResult}};
 use clap::Parser;
@@ -14,8 +15,8 @@ fn multipath_parser<const N: usize>(value: &str) -> Result<[String; N]> {
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-  #[arg(short='u', long, value_name="DIR:SOCKET_PATH", num_args=1.., value_parser=multipath_parser::<2>)]
-  bind_unix_socket: Option<Vec<[String; 2]>>,
+  #[arg(short='u', long, value_name="DIR:PLUGIN_PATH", num_args=1.., value_parser=multipath_parser::<2>)]
+  bind: Option<Vec<[String; 2]>>,
 
   #[arg(last = true, required = true)]
   command: Vec<String>
@@ -36,15 +37,17 @@ fn main() {
     }
 
     ForkResult::Parent { child } => {
-
-      let mut mountsockets: Vec<(&Path, Box<dyn sockets::Socket>)> = vec![];
-      if let Some(value) = &args.bind_unix_socket {
-        for [dirp, socketp] in value {
-          mountsockets.push((Path::new(dirp), Box::new(sockets::unix::UnixSocket::connect(&socketp).unwrap())));
+      let mut mountsockets: Vec<(PathBuf, Arc<Plugin>)> = vec![];
+      if let Some(value) = &args.bind {
+        for [dirp, plugin_path] in value {
+          static LIB: OnceLock<Library> = OnceLock::new();
+          LIB.get_or_init(|| Library::open(plugin_path).unwrap());
+          let plugin = Arc::new(Plugin::load(&LIB.get().unwrap(), None));
+          mountsockets.push((PathBuf::from(dirp), plugin));
         }
       }
       let state = Arc::new(State {
-        mounts: Mounts::new(mountsockets),
+        mounts: Mounts::new(&mountsockets),
         cwd: RwLock::new(std::env::current_dir().unwrap()),
         ..Default::default()
       });

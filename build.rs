@@ -1,18 +1,14 @@
-use std::{env, path::Path};
-
-use flatc::flatc;
+use std::{env, path::PathBuf};
 
 fn main() {
-  println!("cargo:rerun-if-changed=flatbuffers");
-  let out_dir = env::var_os("OUT_DIR").unwrap();
-  flatc_rust::Flatc::from_path(flatc()).run(flatc_rust::Args {
-    lang: "rust",
-    inputs: &[
-      Path::new("./flatbuffers/request.fbs"),
-      Path::new("./flatbuffers/response.fbs")
-    ],
-    out_dir: &Path::new(&out_dir).join("flatbuffers"),
-    ..Default::default()
-  }).unwrap();
+  let bindings = bindgen::Builder::default()
+    .header("mountbox.h")
+    .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+    .generate()
+    .expect("Unable to generate bindings");
 
+  let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+  bindings
+    .write_to_file(out_path.join("bindings.rs"))
+    .expect("Couldn't write bindings!");
 }
