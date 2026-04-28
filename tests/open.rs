@@ -1,7 +1,8 @@
-use std::{ffi::CString, io::{Read, Write}, path::PathBuf};
+use std::{ffi::CString, io::{Read, Write}};
 use common::raw;
 use mountbox::{syscall_nr, tracer};
 use nix::{fcntl::{fcntl, FcntlArg::F_GETFD}, libc};
+use typed_path::PlatformPathBuf;
 
 mod common;
 
@@ -25,12 +26,12 @@ fn open_should_allocate_fd() {
   let state = create_state!("/test", open_should_allocate_fd_plugin);
   let code = tracer::attach(state.clone(), child).unwrap();
   assert_eq!(code, 0);
-  let mount = state.mounts.get_mount(&PathBuf::from("/test")).unwrap();
+  let mount = state.mounts.get_mount(&PlatformPathBuf::from("/test")).unwrap();
   let buf = &mut [0u8; 8];
   r.read(buf).unwrap();
   let fd = i64::from_ne_bytes(*buf);
   let fd_info = mount.get_fd_info(fd as u16);
   assert!(fd_info.is_some());
-  assert_eq!(fd_info.unwrap().path, PathBuf::from("/open"));
+  assert_eq!(fd_info.unwrap().path, "/open");
   assert!(fcntl(fd as i32, F_GETFD).unwrap() != -1);
 }

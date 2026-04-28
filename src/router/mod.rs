@@ -5,7 +5,6 @@ use crate::{ptrace, state::State};
 use anyhow::Result;
 use nix::{libc::user_regs_struct, unistd::Pid};
 
-
 macro_rules! el {
   ($e:stmt, $t:tt) => {};
   ($e:stmt,) => {$e};
@@ -23,8 +22,13 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
       el!(let fullpath = cwd.join(raw_path), $($dirfd_arg)?);
       let mount = state.mounts.get_mount_of_path(fullpath.as_path());
       if let Some(mount) = mount {
-        let path = std::path::Path::new("/").join(fullpath.strip_prefix(&mount.path).unwrap());
-        $body(mount, &path, tid, regs, wait_ptrace_ret)?;
+        if let Ok(relpath) = typed_path::Utf8UnixPath::from_bytes_path(fullpath.strip_prefix(&mount.path).unwrap()) {
+          let path = typed_path::Utf8UnixPathBuf::from("/").join(relpath);
+          $body(mount, &path, tid, regs, wait_ptrace_ret)?;
+          // TODO: handle errs
+        } else {
+          todo!("handle non utf8 path")
+        }
       } else {
         wait_ptrace_ret()?;
       }

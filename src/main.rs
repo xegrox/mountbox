@@ -1,10 +1,11 @@
-use std::{os::unix::process::CommandExt, path::PathBuf, process::{exit, Command}, sync::{Arc, OnceLock, RwLock}};
+use std::{os::unix::process::CommandExt, process::{exit, Command}, sync::{Arc, OnceLock, RwLock}};
 use anyhow::{anyhow, Result};
 use dlopen::symbor::Library;
 use mountbox::{mounts::Mounts, plugin::Plugin, state::State};
 use mountbox::tracer;
 use nix::{libc::{raise, SIGSTOP}, unistd::{fork, ForkResult}};
 use clap::Parser;
+use typed_path::PlatformPathBuf;
 
 fn multipath_parser<const N: usize>(value: &str) -> Result<[String; N]> {
   value.splitn(N, ':').map(|p| {
@@ -37,18 +38,18 @@ fn main() {
     }
 
     ForkResult::Parent { child } => {
-      let mut mountsockets: Vec<(PathBuf, Arc<Plugin>)> = vec![];
+      let mut mountsockets: Vec<(PlatformPathBuf, Arc<Plugin>)> = vec![];
       if let Some(value) = &args.bind {
         for [dirp, plugin_path] in value {
           static LIB: OnceLock<Library> = OnceLock::new();
           LIB.get_or_init(|| Library::open(plugin_path).unwrap());
           let plugin = Arc::new(Plugin::load(&LIB.get().unwrap(), None));
-          mountsockets.push((PathBuf::from(dirp), plugin));
+          mountsockets.push((PlatformPathBuf::from(dirp), plugin));
         }
       }
       let state = Arc::new(State {
         mounts: Mounts::new(&mountsockets),
-        cwd: RwLock::new(std::env::current_dir().unwrap()),
+        cwd: RwLock::new(PlatformPathBuf::from(std::env::current_dir().unwrap().as_os_str().as_encoded_bytes())),
         ..Default::default()
       });
       tracer::attach(state, child).unwrap();
