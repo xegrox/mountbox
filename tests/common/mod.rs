@@ -11,7 +11,8 @@ impl raw::mountbox_operations {
     Self {
       open: None,
       read: None,
-      close: None
+      close: None,
+      getattr: None
     }
   }
 }

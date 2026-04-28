@@ -7,8 +7,8 @@ use typed_path::PlatformPathBuf;
 mod common;
 
 create_plugin!(read_should_return_data_plugin, read, |
-  path: *const ::std::os::raw::c_char,
-  buf: *mut ::std::os::raw::c_char,
+  path: *const std::os::raw::c_char,
+  buf: *mut std::os::raw::c_char,
   size: u64,
   _offset: i64,
   _fh: u64| -> std::os::raw::c_int {

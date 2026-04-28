@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::{ffi::CString, mem::MaybeUninit};
 
 use anyhow::{anyhow, Result};
 use dlopen::symbor::{Library, Symbol};
@@ -58,6 +58,16 @@ impl<'a> Plugin<'a> {
       int_to_result!(res)?;
       buf.resize(res as usize, 0);
       Ok(buf)
+    }
+  }
+
+  pub fn getattr(&self, path: &str) -> Result<raw::stat> {
+    let cpath = CString::new(path).unwrap();
+    unsafe {
+      let mut stat = MaybeUninit::<raw::stat>::zeroed();
+      let res = exec!(self, getattr, cpath.as_ptr(), stat.as_mut_ptr());
+      int_to_result!(res)?;
+      Ok(stat.assume_init())
     }
   }
 }

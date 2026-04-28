@@ -1,6 +1,7 @@
 mod open;
 mod read;
 mod close;
+mod fstat;
 
 use crate::{ptrace, state::State};
 use anyhow::Result;
@@ -51,6 +52,7 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
     ptrace::syscall_nr!(open) => route_path!(arg0, open::open),
     ptrace::syscall_nr!(read) => route_fd!(arg0, read::read),
     ptrace::syscall_nr!(close) => route_fd!(arg0, close::close),
+    ptrace::syscall_nr!(fstat) => route_fd!(arg0, fstat::fstat),
     _ => wait_ptrace_ret()?
     // ptrace::syscall_nr!(read) => route_fd!(read, arg0, args(arg2: usize), result(bytes arg1), result_code=true),
     // ptrace::syscall_nr!(open) => route_path!(open, arg0, result_code=true),
