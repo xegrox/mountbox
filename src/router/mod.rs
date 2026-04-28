@@ -1,5 +1,6 @@
 mod open;
 mod read;
+mod close;
 
 use crate::{ptrace, state::State};
 use anyhow::Result;
@@ -39,8 +40,7 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
     ($fd_arg:tt, $body:expr) => {{
       let raw_fd = ptrace::getreg!(regs, $fd_arg) as u16;
       if let Some(mount) = state.mounts.get_mount_of_fd(raw_fd) {
-        let fd = mount.get_fd_info(raw_fd).unwrap();
-        $body(mount, &fd.path, tid, regs, wait_ptrace_ret)?;
+        $body(mount, raw_fd, tid, regs, wait_ptrace_ret)?;
       } else {
         wait_ptrace_ret()?;
       }
@@ -50,6 +50,7 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
   match ptrace::getreg!(regs, syscall_nr) {
     ptrace::syscall_nr!(open) => route_path!(arg0, open::open),
     ptrace::syscall_nr!(read) => route_fd!(arg0, read::read),
+    ptrace::syscall_nr!(close) => route_fd!(arg0, close::close),
     _ => wait_ptrace_ret()?
     // ptrace::syscall_nr!(read) => route_fd!(read, arg0, args(arg2: usize), result(bytes arg1), result_code=true),
     // ptrace::syscall_nr!(open) => route_path!(open, arg0, result_code=true),

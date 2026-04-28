@@ -10,7 +10,8 @@ impl raw::mountbox_operations {
   pub const fn default() -> Self {
     Self {
       open: None,
-      read: None
+      read: None,
+      close: None
     }
   }
 }

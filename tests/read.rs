@@ -10,7 +10,8 @@ create_plugin!(read_should_return_data_plugin, read, |
   path: *const ::std::os::raw::c_char,
   buf: *mut ::std::os::raw::c_char,
   size: u64,
-  _offset: i64| -> std::os::raw::c_int {
+  _offset: i64,
+  _fh: u64| -> std::os::raw::c_int {
     let path = unsafe { std::ffi::CStr::from_ptr(path).to_str().unwrap() };
     let buf = unsafe { std::slice::from_raw_parts_mut(buf, size as usize) };
     assert_eq!(path, "/read");

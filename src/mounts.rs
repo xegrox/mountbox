@@ -35,6 +35,11 @@ impl Mount {
     self.fd_lookup_table.insert(raw_fd, self.path.clone());
     Ok(raw_fd)
   }
+  
+  pub fn release_fd(&self, fd: u16) {
+    self.fds.remove(&fd);
+    self.fd_lookup_table.remove(&fd);
+  }
 }
 
 pub struct Mounts {
