@@ -2,7 +2,8 @@ use std::mem::MaybeUninit;
 use anyhow::Result;
 use nix::libc::user_regs_struct;
 use typed_path::Utf8UnixPath;
-use crate::{mounts::Mount, plugin, ptrace};
+use crate::{mounts::Mount, plugin};
+use super::ptrace;
 
 pub fn statx(mount: &Mount, path: &Utf8UnixPath, tid: ptrace::Pid, regs: user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   let stat = mount.plugin.getattr(path.as_str())?;

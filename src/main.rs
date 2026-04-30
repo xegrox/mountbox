@@ -1,8 +1,7 @@
 use std::{os::unix::process::CommandExt, process::{exit, Command}, sync::{Arc, OnceLock, RwLock}};
 use anyhow::{anyhow, Result};
 use dlopen::symbor::Library;
-use mountbox::{mounts::Mounts, plugin::Plugin, state::State};
-use mountbox::tracer;
+use mountbox::{mounts::Mounts, plugin::Plugin, ptrace, state::State};
 use nix::{libc::{raise, SIGSTOP}, unistd::{fork, ForkResult}};
 use clap::Parser;
 use typed_path::PlatformPathBuf;
@@ -52,7 +51,7 @@ fn main() {
         cwd: RwLock::new(PlatformPathBuf::from(std::env::current_dir().unwrap().as_os_str().as_encoded_bytes())),
         ..Default::default()
       });
-      tracer::attach(state, child).unwrap();
+      ptrace::attach(state, child).unwrap();
     }
   }
 }

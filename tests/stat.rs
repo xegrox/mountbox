@@ -1,6 +1,6 @@
 use std::{ffi::CString, mem::MaybeUninit};
 use common::raw;
-use mountbox::{syscall_nr, tracer};
+use mountbox::{syscall_nr, ptrace};
 use nix::libc;
 
 mod common;
@@ -35,6 +35,6 @@ fn stat_should_return_stat() {
     };
   });
   let state = create_state!("/test", stat_should_return_stat_plugin);
-  let code = tracer::attach(state.clone(), child).unwrap();
+  let code = ptrace::attach(state.clone(), child).unwrap();
   assert_eq!(code, 0);
 }

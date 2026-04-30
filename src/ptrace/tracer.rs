@@ -1,16 +1,17 @@
-use std::{cell::RefCell, sync::Arc, thread::{self, JoinHandle}};
+use std::{cell::RefCell, sync::Arc, thread};
 
 use nix::{sys::wait::{waitpid, WaitStatus}, unistd::Pid};
 
-use crate::{router, ptrace, state::State};
+use crate::state::State;
 use anyhow::{anyhow, Result};
+use super::ptrace;
 
 pub fn attach(state: Arc<State>, pid: Pid) -> Result<u8> {
   ptrace::attach(pid)?;
   waitpid(pid, None)?; // TODO: support multiple tid per pid
   ptrace::setoptions(pid, ptrace::Options::PTRACE_O_TRACESYSGOOD)?;
   ptrace::syscall(pid, None)?;
-  let mut threads: Vec<JoinHandle<Result<u8>>> = vec![];
+  let mut threads: Vec<thread::JoinHandle<Result<u8>>> = vec![];
   loop {
     let sig = waitpid(pid, None)?;
     match sig {
@@ -50,7 +51,7 @@ pub fn attach(state: Arc<State>, pid: Pid) -> Result<u8> {
           });
           threads.push(join);
         } else {
-          router::route(&state, regs, pid, wait_ptrace_ret)?;
+          super::router::route(&state, regs, pid, wait_ptrace_ret)?;
           assert!(*is_called.borrow(), "wait_ptrace_ret must be called");
         }
       }

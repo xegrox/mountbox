@@ -1,12 +1,13 @@
+mod close;
+mod fstat;
+mod lstat;
 mod open;
 mod read;
-mod close;
 mod stat;
-mod lstat;
-mod fstat;
 mod statx;
 
-use crate::{ptrace, state::State, dirfd_resolver};
+use crate::{state::State, dirfd_resolver};
+use super::ptrace;
 use anyhow::Result;
 use nix::{libc::user_regs_struct, unistd::Pid};
 
@@ -19,7 +20,7 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
   macro_rules! route_path {
     ($path_arg:tt $(@$dirfd_arg:tt)?, $body:expr) => {{
       let cwd = state.cwd.read().unwrap();
-      let raw_path = crate::ptrace::read_str(tid, ptrace::getreg!(regs, $path_arg))?;
+      let raw_path = ptrace::read_str(tid, ptrace::getreg!(regs, $path_arg))?;
       $(
         let dirfd = ptrace::getreg!(regs, $dirfd_arg) as i32;
         let fullpath = cwd.join(dirfd_resolver::resolve(tid, dirfd, &raw_path));

@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use common::raw;
-use mountbox::{syscall_nr, tracer};
+use mountbox::{syscall_nr, ptrace};
 use nix::{fcntl::{fcntl, FcntlArg::F_GETFD}, libc};
 use typed_path::PlatformPathBuf;
 
@@ -29,7 +29,7 @@ fn close_should_drop_fd() {
   let fd = mount.allocate_fd("/close", None).unwrap();
   w.write(&fd.to_ne_bytes()).unwrap();
   assert!(fcntl(fd as i32, F_GETFD).unwrap() != -1);
-  let code = tracer::attach(state.clone(), child).unwrap();
+  let code = ptrace::attach(state.clone(), child).unwrap();
   assert_eq!(code, 0);
   assert!(mount.get_fd_info(fd).is_none());
   assert_eq!(fcntl(fd as i32, F_GETFD).err(), Some(nix::errno::Errno::EBADF));

@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use common::raw;
-use mountbox::{syscall_nr, tracer};
+use mountbox::{syscall_nr, ptrace};
 use nix::libc;
 use typed_path::PlatformPathBuf;
 
@@ -37,6 +37,6 @@ fn read_should_return_data() {
   let mount = state.mounts.get_mount(&PlatformPathBuf::from("/test")).unwrap();
   let fd = mount.allocate_fd("/read", None).unwrap();
   w.write(&fd.to_ne_bytes()).unwrap();
-  let code = tracer::attach(state.clone(), child).unwrap();
+  let code = ptrace::attach(state.clone(), child).unwrap();
   assert_eq!(code, 0);
 }

@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct, sys::ptrace::{attach, setregs, Options, traceme, setoptions, syscall}};
+pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct, sys::ptrace::{attach, setregs, Options, setoptions, syscall}};
 use std::ffi::{c_long, c_void, CStr};
 use nix::sys::ptrace;
 

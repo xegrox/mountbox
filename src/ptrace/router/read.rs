@@ -1,6 +1,7 @@
 use anyhow::Result;
 use nix::libc::user_regs_struct;
-use crate::{mounts::Mount, ptrace};
+use crate::mounts::Mount;
+use super::ptrace;
 
 pub fn read(mount: &Mount, fd: u16, tid: ptrace::Pid, regs: user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   let fd_info = mount.get_fd_info(fd).unwrap();
