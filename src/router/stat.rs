@@ -1,11 +1,12 @@
 use std::mem::MaybeUninit;
 use anyhow::Result;
 use nix::libc::user_regs_struct;
+use typed_path::Utf8UnixPath;
 use crate::{mounts::Mount, ptrace, plugin};
 
-pub fn fstat(mount: &Mount, fd: u16, tid: ptrace::Pid, regs: user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
-  let fd_info = mount.get_fd_info(fd).unwrap();
-  let stat = mount.plugin.getattr(fd_info.path.as_str())?;
+// TODO: follow link
+pub fn stat(mount: &Mount, path: &Utf8UnixPath, tid: ptrace::Pid, regs: user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
+  let stat = mount.plugin.getattr(path.as_str())?;
   let mut cstat = unsafe { MaybeUninit::<nix::libc::stat>::zeroed().assume_init() };
   match stat.mode & plugin::S_IFMT {
     plugin::S_IFREG => cstat.st_mode |= nix::libc::S_IFREG,

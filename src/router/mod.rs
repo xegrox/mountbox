@@ -1,9 +1,12 @@
 mod open;
 mod read;
 mod close;
+mod stat;
+mod lstat;
 mod fstat;
+mod statx;
 
-use crate::{ptrace, state::State};
+use crate::{ptrace, state::State, dirfd_resolver};
 use anyhow::Result;
 use nix::{libc::user_regs_struct, unistd::Pid};
 
@@ -19,7 +22,7 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
       let raw_path = crate::ptrace::read_str(tid, ptrace::getreg!(regs, $path_arg))?;
       $(
         let dirfd = ptrace::getreg!(regs, $dirfd_arg) as i32;
-        let fullpath = cwd.join(state.dirfd_resolver.resolve(tid, dirfd, raw_path));
+        let fullpath = cwd.join(dirfd_resolver::resolve(tid, dirfd, &raw_path));
       )?
       el!(let fullpath = cwd.join(raw_path), $($dirfd_arg)?);
       let mount = state.mounts.get_mount_of_path(fullpath.as_path());
@@ -52,7 +55,10 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
     ptrace::syscall_nr!(open) => route_path!(arg0, open::open),
     ptrace::syscall_nr!(read) => route_fd!(arg0, read::read),
     ptrace::syscall_nr!(close) => route_fd!(arg0, close::close),
+    ptrace::syscall_nr!(stat) => route_path!(arg0, stat::stat),
+    ptrace::syscall_nr!(lstat) => route_path!(arg0, lstat::lstat),
     ptrace::syscall_nr!(fstat) => route_fd!(arg0, fstat::fstat),
+    ptrace::syscall_nr!(statx) => route_path!(arg1@arg0, statx::statx),
     _ => wait_ptrace_ret()?
     // ptrace::syscall_nr!(read) => route_fd!(read, arg0, args(arg2: usize), result(bytes arg1), result_code=true),
     // ptrace::syscall_nr!(open) => route_path!(open, arg0, result_code=true),
