@@ -5,6 +5,8 @@ mod open;
 mod read;
 mod stat;
 mod statx;
+mod getcwd;
+mod chdir;
 
 use crate::{state::State, dirfd_resolver};
 use super::ptrace;
@@ -60,6 +62,8 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
     ptrace::syscall_nr!(lstat) => route_path!(arg0, lstat::lstat),
     ptrace::syscall_nr!(fstat) => route_fd!(arg0, fstat::fstat),
     ptrace::syscall_nr!(statx) => route_path!(arg1@arg0, statx::statx),
+    ptrace::syscall_nr!(getcwd) => getcwd::getcwd(state, tid, regs, wait_ptrace_ret)?,
+    ptrace::syscall_nr!(chdir) => chdir::chdir(state, tid, regs, wait_ptrace_ret)?,
     _ => wait_ptrace_ret()?
     // ptrace::syscall_nr!(read) => route_fd!(read, arg0, args(arg2: usize), result(bytes arg1), result_code=true),
     // ptrace::syscall_nr!(open) => route_path!(open, arg0, result_code=true),

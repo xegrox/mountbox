@@ -19,14 +19,14 @@ impl raw::mountbox_operations {
 
 #[macro_export]
 macro_rules! create_plugin {
-  ($name:tt, $op:tt, |$($k:tt: $v:ty),*| -> $ret:ty {$($body:tt)*}) => { paste::paste! {
+  ($name:tt $(, $op:tt, |$($k:tt: $v:ty),*| -> $ret:ty {$($body:tt)*})?) => { paste::paste! {
 
-    unsafe extern "C" fn [<$name _op>]($($k:$v),*) -> $ret {$($body)*}
+    $(unsafe extern "C" fn [<$name _op>]($($k:$v),*) -> $ret {$($body)*})?
 
     #[unsafe(no_mangle)]
     #[allow(non_upper_case_globals)]
     pub static mut $name: raw::mountbox_operations = raw::mountbox_operations {
-      $op: Some([<$name _op>]),
+      $($op: Some([<$name _op>]),)?
       ..$crate::common::raw::mountbox_operations::default()
     };
   } }

@@ -33,6 +33,7 @@ macro_rules! syscall_nr {
   (execve) => { 59 };
   (exit) => { 60 };
   (getcwd) => { 79 };
+  (chdir) => { 80 };
   (exit_group) => { 231 };
   (openat) => { 257 };
   (execveat) => { 322 };
