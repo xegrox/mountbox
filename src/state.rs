@@ -15,7 +15,7 @@ impl Default for State {
     State {
       mounts: Mounts::new(&[]),
       cwd: RwLock::new(PlatformPathBuf::new()),
-      execve_fd: RwLock::new(memfd_create(CString::new("name").unwrap().as_c_str(), MemFdCreateFlag::empty()).unwrap().into_raw_fd() as u16)
+      execve_fd: RwLock::new(memfd_create(CString::new("mountbox").unwrap().as_c_str(), MemFdCreateFlag::empty()).unwrap().into_raw_fd() as u16)
     }
   }
 }

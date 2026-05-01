@@ -6,7 +6,7 @@ use typed_path::PlatformPathBuf;
 
 mod common;
 
-create_plugin!(open_should_allocate_fd_plugin, open, |path: *const std::os::raw::c_char| -> std::os::raw::c_int {
+create_plugin!(open_should_allocate_fd_plugin, open: |path: *const std::os::raw::c_char| -> std::os::raw::c_int {
   let path = unsafe { std::ffi::CStr::from_ptr(path).to_str().unwrap() };
   assert_eq!(path, "/open");
   return 0;

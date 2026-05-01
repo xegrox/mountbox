@@ -5,7 +5,7 @@ use nix::libc;
 
 mod common;
 
-create_plugin!(statx_should_return_stat_plugin, getattr, |
+create_plugin!(statx_should_return_stat_plugin, getattr: |
   path: *const std::os::raw::c_char,
   stat: *mut raw::stat| -> std::os::raw::c_int {
     let path = unsafe { std::ffi::CStr::from_ptr(path).to_str().unwrap() };

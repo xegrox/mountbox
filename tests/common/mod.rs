@@ -19,14 +19,14 @@ impl raw::mountbox_operations {
 
 #[macro_export]
 macro_rules! create_plugin {
-  ($name:tt $(, $op:tt, |$($k:tt: $v:ty),*| -> $ret:ty {$($body:tt)*})?) => { paste::paste! {
+  ($name:tt $(, $($op:tt: |$($k:tt: $v:ty),*| -> $ret:ty {$($body:tt)*}),*)?) => { paste::paste! {
 
-    $(unsafe extern "C" fn [<$name _op>]($($k:$v),*) -> $ret {$($body)*})?
+    $($(unsafe extern "C" fn [<$name _$op>]($($k:$v),*) -> $ret {$($body)*})?)*
 
     #[unsafe(no_mangle)]
     #[allow(non_upper_case_globals)]
     pub static mut $name: raw::mountbox_operations = raw::mountbox_operations {
-      $($op: Some([<$name _op>]),)?
+      $($($op: Some([<$name _$op>])),*,)?
       ..$crate::common::raw::mountbox_operations::default()
     };
   } }
@@ -54,10 +54,10 @@ macro_rules! run_child {
 
 #[macro_export]
 macro_rules! create_state {
-  ($path:expr, $plugin:expr $(, {$($k:tt: $v:expr),*})?) => {
+  ($path:expr, $plugin:expr $(, {$($k:tt$(: $v:expr)?),*})?) => {
     std::sync::Arc::new(mountbox::state::State {
       mounts: mountbox::mounts::Mounts::new(&[(typed_path::PlatformPathBuf::from($path), std::sync::Arc::new(mountbox::plugin::Plugin::load(&common::LIB, Some(stringify!($plugin)))))]),
-      $($($k: $v),*, )?
+      $($($k$(: $v)?),*, )?
       ..Default::default()
     })
   };

@@ -50,14 +50,12 @@ impl<'a> Plugin<'a> {
     }
   }
 
-  pub fn read(&self, path: &str, size: u64, offset: i64, fh: u64) -> Result<Vec<u8>> {
-    let mut buf = vec![0; size as usize];
+  pub fn read(&self, path: &str, buf: &mut [u8], offset: i64, fh: u64) -> Result<u64> {
     let cpath = CString::new(path).unwrap();
     unsafe {
-      let res = exec!(self, read, cpath.as_ptr(), buf.as_mut_ptr() as *mut i8, size, offset, fh);
+      let res = exec!(self, read, cpath.as_ptr(), buf.as_mut_ptr() as *mut i8, buf.len() as u64, offset, fh);
       int_to_result!(res)?;
-      buf.resize(res as usize, 0);
-      Ok(buf)
+      Ok(res as u64)
     }
   }
 

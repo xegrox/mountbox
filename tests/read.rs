@@ -6,7 +6,7 @@ use typed_path::PlatformPathBuf;
 
 mod common;
 
-create_plugin!(read_should_return_data_plugin, read, |
+create_plugin!(read_should_return_data_plugin, read: |
   path: *const std::os::raw::c_char,
   buf: *mut std::os::raw::c_char,
   size: u64,

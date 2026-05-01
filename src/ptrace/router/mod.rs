@@ -7,6 +7,7 @@ mod stat;
 mod statx;
 mod getcwd;
 mod chdir;
+mod execve;
 
 use crate::{state::State, dirfd_resolver};
 use super::ptrace;
@@ -20,7 +21,7 @@ macro_rules! el {
 
 pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   macro_rules! route_path {
-    ($path_arg:tt $(@$dirfd_arg:tt)?, $body:expr) => {{
+    ($path_arg:tt $(@$dirfd_arg:tt)?, $body:expr $(, $($extra_args:expr),*)?) => {{
       let cwd = state.cwd.read().unwrap();
       let raw_path = ptrace::read_str(tid, ptrace::getreg!(regs, $path_arg))?;
       $(
@@ -32,7 +33,7 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
       if let Some(mount) = mount {
         if let Ok(relpath) = typed_path::Utf8UnixPath::from_bytes_path(fullpath.strip_prefix(&mount.path).unwrap()) {
           let path = typed_path::Utf8UnixPathBuf::from("/").join(relpath);
-          $body(mount, &path, tid, regs, wait_ptrace_ret)?;
+          $body(mount, &path, tid, regs, wait_ptrace_ret $(, $($extra_args),*)?)?;
           // TODO: handle errs
         } else {
           todo!("handle non utf8 path")
@@ -64,6 +65,7 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
     ptrace::syscall_nr!(statx) => route_path!(arg1@arg0, statx::statx),
     ptrace::syscall_nr!(getcwd) => getcwd::getcwd(state, tid, regs, wait_ptrace_ret)?,
     ptrace::syscall_nr!(chdir) => chdir::chdir(state, tid, regs, wait_ptrace_ret)?,
+    ptrace::syscall_nr!(execve) => route_path!(arg0, execve::execve, &state.execve_fd),
     _ => wait_ptrace_ret()?
     // ptrace::syscall_nr!(read) => route_fd!(read, arg0, args(arg2: usize), result(bytes arg1), result_code=true),
     // ptrace::syscall_nr!(open) => route_path!(open, arg0, result_code=true),
