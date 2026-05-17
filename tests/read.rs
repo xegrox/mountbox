@@ -1,8 +1,8 @@
 use std::io::{Read, Write};
 use common::raw;
-use mountbox::{syscall_nr, ptrace};
+use mountbox::{syscall_nr, tracer};
 use nix::libc;
-use typed_path::PlatformPathBuf;
+use typed_path::NativePathBuf;
 
 mod common;
 
@@ -34,9 +34,9 @@ fn read_should_return_data() {
     };
   });
   let state = create_state!("/test", read_should_return_data_plugin);
-  let mount = state.mounts.get_mount(&PlatformPathBuf::from("/test")).unwrap();
+  let mount = state.mounts.get_mount(&NativePathBuf::from("/test")).unwrap();
   let fd = mount.allocate_fd("/read", None).unwrap();
   w.write(&fd.to_ne_bytes()).unwrap();
-  let code = ptrace::attach(state.clone(), child).unwrap();
-  assert_eq!(code, 0);
+  let status = tracer::attach(state.clone(), child).unwrap();
+  assert_eq!(status, tracer::TraceeStatus::Exited(0));
 }

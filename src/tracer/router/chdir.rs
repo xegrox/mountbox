@@ -1,10 +1,9 @@
 use crate::state::State;
-use super::ptrace;
-use anyhow::Result;
-use typed_path::PlatformPathBuf;
+use super::{ptrace, Result};
+use typed_path::NativePathBuf;
 
 pub fn chdir(state: &State, tid: ptrace::Pid, regs: ptrace::user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
-  let relpath = PlatformPathBuf::from(ptrace::read_str(tid, ptrace::getreg!(regs, arg0))?);
+  let relpath = NativePathBuf::from(ptrace::read_path(tid, ptrace::getreg!(regs, arg0))?);
   let path = state.cwd.read().unwrap().join(relpath);
   if let Some(_) = state.mounts.get_mount_of_path(&path) {
     *state.cwd.write().unwrap() = path; // TODO: emulate /proc/PID/cwd

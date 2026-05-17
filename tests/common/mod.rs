@@ -56,7 +56,7 @@ macro_rules! run_child {
 macro_rules! create_state {
   ($path:expr, $plugin:expr $(, {$($k:tt$(: $v:expr)?),*})?) => {
     std::sync::Arc::new(mountbox::state::State {
-      mounts: mountbox::mounts::Mounts::new(&[(typed_path::PlatformPathBuf::from($path), std::sync::Arc::new(mountbox::plugin::Plugin::load(&common::LIB, Some(stringify!($plugin)))))]),
+      mounts: mountbox::mounts::Mounts::new(&[(typed_path::NativePathBuf::from($path), std::sync::Arc::new(mountbox::plugin::Plugin::load(&common::LIB, Some(stringify!($plugin)))))]),
       $($($k$(: $v)?),*, )?
       ..Default::default()
     })

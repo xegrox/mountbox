@@ -1,9 +1,8 @@
 use std::mem::MaybeUninit;
-use anyhow::Result;
 use nix::libc::user_regs_struct;
 use typed_path::Utf8UnixPath;
 use crate::{mounts::Mount, plugin};
-use super::ptrace;
+use super::{ptrace, Result};
 
 pub fn statx(mount: &Mount, path: &Utf8UnixPath, tid: ptrace::Pid, regs: user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   let stat = mount.plugin.getattr(path.as_str())?;
@@ -24,7 +23,7 @@ pub fn statx(mount: &Mount, path: &Utf8UnixPath, tid: ptrace::Pid, regs: user_re
     core::mem::size_of::<nix::libc::statx>(),
   ) };
   let buf_ptr = ptrace::getreg!(regs, arg2);
-  ptrace::write_bytes(tid, buf_ptr, cstatx_buf, cstatx_buf.len());
+  ptrace::write_bytes(tid, buf_ptr, cstatx_buf, cstatx_buf.len())?;
   ptrace::setregs(tid, user_regs_struct {
     orig_rax: u64::MAX,
     ..regs

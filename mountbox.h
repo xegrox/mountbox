@@ -1,5 +1,8 @@
 #include <stdint.h>
 
+#define EPERM  1
+#define ENOENT 2
+
 const uint16_t S_IFMT  = 0170000;
 const uint16_t S_IFDIR = 0040000;
 const uint16_t S_IFREG = 0100000;

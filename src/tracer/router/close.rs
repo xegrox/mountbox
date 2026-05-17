@@ -1,7 +1,6 @@
-use anyhow::Result;
 use nix::libc::user_regs_struct;
 use crate::mounts::Mount;
-use super::ptrace;
+use super::{Result, ptrace};
 
 pub fn close(mount: &Mount, fd: u16, tid: ptrace::Pid, regs: user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   let fd_info = mount.get_fd_info(fd).unwrap();
@@ -16,6 +15,6 @@ pub fn close(mount: &Mount, fd: u16, tid: ptrace::Pid, regs: user_regs_struct, w
   ptrace::setregs(tid, user_regs_struct {
     rax: 0,
     ..ptrace::getregs(tid).unwrap()
-  }).unwrap();
+  })?;
   Ok(())
 }

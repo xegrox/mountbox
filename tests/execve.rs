@@ -1,6 +1,6 @@
 use std::{ffi::CString, fs::File, io::{BufRead, BufReader}, os::fd::{AsRawFd, FromRawFd, IntoRawFd}, sync::{OnceLock, RwLock}};
 use common::raw;
-use mountbox::{syscall_nr, ptrace};
+use mountbox::{syscall_nr, tracer};
 use nix::{libc, sys::memfd};
 
 mod common;
@@ -56,7 +56,8 @@ fn execve_noarg_noenv_should_succeed() {
   let state = create_state!("/test", execve_noarg_noenv_should_succeed_plugin, {
     execve_fd
   });
-  let code = ptrace::attach(state.clone(), child).unwrap();
+  let status = tracer::attach(state.clone(), child).unwrap();
+  assert_eq!(status, tracer::TraceeStatus::Exited(0));
   let mut buf = String::new();
   unsafe { assert!(libc::poll(&mut libc::pollfd {
     fd: *r,
@@ -65,5 +66,4 @@ fn execve_noarg_noenv_should_succeed() {
   }, 1, 1000) > 0, "did not receive output from execve"); }
   unsafe { BufReader::new(File::from_raw_fd(*r)).read_line(&mut buf).unwrap() };
   assert_eq!(buf, "execve_success\n");
-  assert_eq!(code, 0);
 }

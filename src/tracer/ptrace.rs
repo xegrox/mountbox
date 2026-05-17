@@ -1,5 +1,4 @@
-use anyhow::{bail, Result};
-pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct, sys::ptrace::{attach, setregs, Options, setoptions, syscall}};
+pub use nix::{unistd::Pid, errno::Errno, libc::user_regs_struct, sys::ptrace::{attach, setregs, getregs, Options, setoptions, syscall}};
 use std::ffi::{c_long, c_void, CStr};
 use nix::sys::ptrace;
 
@@ -43,27 +42,24 @@ macro_rules! syscall_nr {
 pub use getreg;
 pub use syscall_nr;
 
-pub fn getregs(pid: Pid) -> Result<user_regs_struct, Errno> {
-  ptrace::getregs(pid)
-}
-
-pub fn read_str(pid: Pid, addr: u64) -> Result<String> {
+pub fn read_path(pid: Pid, addr: u64) -> Result<String, Errno> {
   let mut data: Vec<u8> = Vec::new();
-  while let Ok(chunk) = ptrace::read(pid, (addr as usize + data.len()) as *mut c_void) {
+  loop {
+    if data.len() > nix::libc::PATH_MAX as usize {
+      return Err(Errno::ENAMETOOLONG);
+    }
+    let chunk = ptrace::read(pid, (addr as usize + data.len()) as *mut c_void)
+      .map_err(|e| if matches!(e, Errno::EIO) { Errno::EFAULT } else { e })?;
     let bytes = chunk.to_ne_bytes();
     data.extend(bytes);
     if bytes.contains(&0) {
       break;
     }
   }
-  if data.is_empty() {
-    bail!("ptrace: failed to read string")
-  } else {
-    Ok(CStr::from_bytes_until_nul(&data).unwrap().to_str().unwrap().to_string())
-  }
+  Ok(CStr::from_bytes_until_nul(&data).unwrap().to_str().map_err(|_| Errno::EINVAL)?.to_string())
 }
 
-pub fn write_bytes(pid: Pid, addr: u64, bytes: &[u8], buffer_size: usize) {
+pub fn write_bytes(pid: Pid, addr: u64, bytes: &[u8], buffer_size: usize) -> Result<(), Errno> {
   let mut pos = 0;
   while pos < buffer_size && pos < bytes.len() {
     let chunk: [u8; LONG_LEN] = if pos+LONG_LEN > bytes.len() {
@@ -73,7 +69,9 @@ pub fn write_bytes(pid: Pid, addr: u64, bytes: &[u8], buffer_size: usize) {
     } else {
       bytes[pos..pos+LONG_LEN].try_into().unwrap()
     };
-    ptrace::write(pid, (addr as usize + pos) as *mut c_void, c_long::from_ne_bytes(chunk)).unwrap();
+    ptrace::write(pid, (addr as usize + pos) as *mut c_void, c_long::from_ne_bytes(chunk))
+      .map_err(|e| if matches!(e, Errno::EIO) { Errno::EFAULT } else { e })?;
     pos += LONG_LEN;
   }
+  Ok(())
 }

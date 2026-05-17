@@ -1,9 +1,8 @@
 use std::{ffi::CString, mem::MaybeUninit};
-
-use anyhow::{anyhow, Result};
 use dlopen::symbor::{Library, Symbol};
+use super::{errors::PluginError, raw};
 
-use super::raw;
+type Result<T> = std::result::Result<T, PluginError>;
 
 pub struct Plugin<'a> {
   raw_operations: Symbol<'a, &'a raw::mountbox_operations>
@@ -18,8 +17,11 @@ macro_rules! exec {
 macro_rules! int_to_result {
   ($int:tt) => {
     if $int < 0 {
-      // TODO: map errors
-      Err(anyhow!("error"))
+      Err(match $int.unsigned_abs() {
+        raw::EPERM => PluginError::EPERM,
+        raw::ENOENT => PluginError::ENOENT,
+        _ => PluginError::UNKNOWN
+      })
     } else {
       Ok(())
     }

@@ -1,6 +1,6 @@
 use std::{ffi::CString, str::FromStr};
 use common::raw;
-use mountbox::{syscall_nr, ptrace};
+use mountbox::{syscall_nr, tracer};
 use nix::{fcntl::readlink, libc};
 
 mod common;
@@ -17,8 +17,8 @@ fn chdir_to_mount_should_succeed() {
     };
   });
   let state = create_state!("/test", chdir_plugin);
-  let code = ptrace::attach(state.clone(), child).unwrap();
-  assert_eq!(code, 0);
+  let status = tracer::attach(state.clone(), child).unwrap();
+  assert_eq!(status, tracer::TraceeStatus::Exited(0));
   assert_eq!(state.cwd.read().unwrap().to_str().unwrap(), "/test/chdir");
   // assert_eq!(readlink(format!("/proc/{}/cwd", child).as_str()).unwrap().to_str().unwrap(), "/test/chdir");
 }
@@ -34,8 +34,8 @@ fn chdir_to_not_mount_should_succeed() {
     };
   });
   let state = create_state!("/test", chdir_plugin);
-  let code = ptrace::attach(state.clone(), child).unwrap();
-  assert_eq!(code, 0);
+  let status = tracer::attach(state.clone(), child).unwrap();
+  assert_eq!(status, tracer::TraceeStatus::Exited(0));
   assert_eq!(state.cwd.read().unwrap().to_str().unwrap(), "/");
   assert_eq!(readlink(format!("/proc/{}/cwd", child).as_str()).unwrap().to_str().unwrap(), "/");
 }

@@ -1,8 +1,7 @@
 use std::mem::MaybeUninit;
-use anyhow::Result;
 use nix::libc::user_regs_struct;
 use crate::{mounts::Mount, plugin};
-use super::ptrace;
+use super::{ptrace, Result};
 
 pub fn fstat(mount: &Mount, fd: u16, tid: ptrace::Pid, regs: user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   let fd_info = mount.get_fd_info(fd).unwrap();
@@ -24,7 +23,7 @@ pub fn fstat(mount: &Mount, fd: u16, tid: ptrace::Pid, regs: user_regs_struct, w
     core::mem::size_of::<nix::libc::stat>(),
   ) };
   let buf_ptr = ptrace::getreg!(regs, arg1);
-  ptrace::write_bytes(tid, buf_ptr, cstat_buf, cstat_buf.len());
+  ptrace::write_bytes(tid, buf_ptr, cstat_buf, cstat_buf.len())?;
   ptrace::setregs(tid, user_regs_struct {
     orig_rax: u64::MAX,
     ..regs

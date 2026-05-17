@@ -1,9 +1,7 @@
 use std::{ffi::CString, fs::File, io::Write, os::fd::FromRawFd, sync::RwLock};
-
-use anyhow::Result;
 use typed_path::Utf8UnixPath;
 use crate::mounts::Mount;
-use super::ptrace;
+use super::{ptrace, Result};
 
 pub fn execve(mount: &Mount, path: &Utf8UnixPath, tid: ptrace::Pid, regs: ptrace::user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>, execve_fd: &RwLock<u16>) -> Result<()> {
   mount.plugin.open(path.as_str())?;  
@@ -22,7 +20,7 @@ pub fn execve(mount: &Mount, path: &Utf8UnixPath, tid: ptrace::Pid, regs: ptrace
   let mut regs = regs.clone();
   ptrace::getreg!(regs, syscall_nr) = ptrace::syscall_nr!(execveat);
   ptrace::getreg!(regs, arg0) = memfile_fd as u64;
-  let empty = CString::new("")?;
+  let empty = CString::new("").unwrap();
   ptrace::getreg!(regs, arg1) = empty.as_ptr() as u64;
   ptrace::getreg!(regs, arg2) = 0;
   ptrace::getreg!(regs, arg3) = 0;

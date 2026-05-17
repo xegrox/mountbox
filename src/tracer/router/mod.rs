@@ -9,21 +9,37 @@ mod getcwd;
 mod chdir;
 mod execve;
 
-use crate::{state::State, dirfd_resolver};
+use crate::{dirfd_resolver, plugin, state::State};
 use super::ptrace;
-use anyhow::Result;
 use nix::{libc::user_regs_struct, unistd::Pid};
+use thiserror::Error;
 
 macro_rules! el {
   ($e:stmt, $t:tt) => {};
   ($e:stmt,) => {$e};
 }
 
+#[derive(Error, Debug)]
+pub enum RouterError {
+  #[error("ptrace error")]
+  PtraceError(#[from] nix::errno::Errno),
+  #[error("plugin error")]
+  PluginError(#[from] plugin::PluginError),
+  #[error("io error")]
+  IOError(#[from] std::io::Error),
+  #[error("child exited")]
+  TraceeExited(i32),
+  #[error("child killed")]
+  TraceeKilled(nix::sys::signal::Signal)
+}
+
+pub type Result<T> = std::result::Result<T, RouterError>;
+
 pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   macro_rules! route_path {
     ($path_arg:tt $(@$dirfd_arg:tt)?, $body:expr $(, $($extra_args:expr),*)?) => {{
       let cwd = state.cwd.read().unwrap();
-      let raw_path = ptrace::read_str(tid, ptrace::getreg!(regs, $path_arg))?;
+      let raw_path = ptrace::read_path(tid, ptrace::getreg!(regs, $path_arg))?;
       $(
         let dirfd = ptrace::getreg!(regs, $dirfd_arg) as i32;
         let fullpath = cwd.join(dirfd_resolver::resolve(tid, dirfd, &raw_path));
@@ -34,9 +50,8 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
         if let Ok(relpath) = typed_path::Utf8UnixPath::from_bytes_path(fullpath.strip_prefix(&mount.path).unwrap()) {
           let path = typed_path::Utf8UnixPathBuf::from("/").join(relpath);
           $body(mount, &path, tid, regs, wait_ptrace_ret $(, $($extra_args),*)?)?;
-          // TODO: handle errs
         } else {
-          todo!("handle non utf8 path")
+          return Err(RouterError::PtraceError(nix::errno::Errno::EINVAL));
         }
       } else {
         wait_ptrace_ret()?;
@@ -67,19 +82,6 @@ pub fn route<'a>(state: &State, regs: user_regs_struct, tid: Pid, wait_ptrace_re
     ptrace::syscall_nr!(chdir) => chdir::chdir(state, tid, regs, wait_ptrace_ret)?,
     ptrace::syscall_nr!(execve) => route_path!(arg0, execve::execve, &state.execve_fd),
     _ => wait_ptrace_ret()?
-    // ptrace::syscall_nr!(read) => route_fd!(read, arg0, args(arg2: usize), result(bytes arg1), result_code=true),
-    // ptrace::syscall_nr!(open) => route_path!(open, arg0, result_code=true),
-    // ptrace::syscall_nr!(openat) => route_path!(open, arg1@arg0, result_code=true),
-    // ptrace::syscall_nr!(close) => route_fd!(close, arg0),
-    // ptrace::syscall_nr!(stat) => route_path!(stat, arg0, result(raw arg1)),
-    // ptrace::syscall_nr!(fstat) => route_fd!(fstat, arg0, result(raw arg1)),
-    // ptrace::syscall_nr!(lstat) => route_path!(lstat, arg0, result(raw arg1)),
-    // ptrace::syscall_nr!(statx) => route_path!(statx, arg1, result(raw arg4)),
-    // ptrace::syscall_nr!(getcwd) => route_all!(getcwd, result(string arg0[arg1])),
-    // ptrace::syscall_nr!(execve) => route_path_custom!(execve, arg0),
-    // _ => {
-    //   wait_ptrace_ret()?;
-    // }
   }
   Ok(())
 }

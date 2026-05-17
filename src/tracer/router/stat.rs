@@ -1,11 +1,11 @@
 use std::mem::MaybeUninit;
-use anyhow::Result;
 use nix::libc::user_regs_struct;
 use typed_path::Utf8UnixPath;
 use crate::{mounts::Mount, plugin};
-use super::ptrace;
+use super::{ptrace, Result};
 
-pub fn lstat(mount: &Mount, path: &Utf8UnixPath, tid: ptrace::Pid, regs: user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
+// TODO: follow link
+pub fn stat(mount: &Mount, path: &Utf8UnixPath, tid: ptrace::Pid, regs: user_regs_struct, wait_ptrace_ret: impl Fn() -> Result<()>) -> Result<()> {
   let stat = mount.plugin.getattr(path.as_str())?;
   let mut cstat = unsafe { MaybeUninit::<nix::libc::stat>::zeroed().assume_init() };
   match stat.mode & plugin::S_IFMT {
@@ -24,7 +24,7 @@ pub fn lstat(mount: &Mount, path: &Utf8UnixPath, tid: ptrace::Pid, regs: user_re
     core::mem::size_of::<nix::libc::stat>(),
   ) };
   let buf_ptr = ptrace::getreg!(regs, arg1);
-  ptrace::write_bytes(tid, buf_ptr, cstat_buf, cstat_buf.len());
+  ptrace::write_bytes(tid, buf_ptr, cstat_buf, cstat_buf.len())?;
   ptrace::setregs(tid, user_regs_struct {
     orig_rax: u64::MAX,
     ..regs

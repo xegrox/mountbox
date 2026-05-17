@@ -1,8 +1,8 @@
 use std::io::{Read, Write};
 use common::raw;
-use mountbox::{syscall_nr, ptrace};
+use mountbox::{syscall_nr, tracer};
 use nix::{fcntl::{fcntl, FcntlArg::F_GETFD}, libc};
-use typed_path::PlatformPathBuf;
+use typed_path::NativePathBuf;
 
 mod common;
 
@@ -25,12 +25,12 @@ fn close_should_drop_fd() {
     };
   });
   let state = create_state!("/test", close_should_drop_fd_plugin);
-  let mount = state.mounts.get_mount(&PlatformPathBuf::from("/test")).unwrap();
+  let mount = state.mounts.get_mount(&NativePathBuf::from("/test")).unwrap();
   let fd = mount.allocate_fd("/close", None).unwrap();
   w.write(&fd.to_ne_bytes()).unwrap();
   assert!(fcntl(fd as i32, F_GETFD).unwrap() != -1);
-  let code = ptrace::attach(state.clone(), child).unwrap();
-  assert_eq!(code, 0);
+  let status = tracer::attach(state.clone(), child).unwrap();
+  assert_eq!(status, tracer::TraceeStatus::Exited(0));
   assert!(mount.get_fd_info(fd).is_none());
   assert_eq!(fcntl(fd as i32, F_GETFD).err(), Some(nix::errno::Errno::EBADF));
 }

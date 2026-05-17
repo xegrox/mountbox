@@ -1,8 +1,8 @@
 use std::ffi::CStr;
 use common::raw;
-use mountbox::{syscall_nr, ptrace};
+use mountbox::{syscall_nr, tracer};
 use nix::libc;
-use typed_path::PlatformPathBuf;
+use typed_path::NativePathBuf;
 
 mod common;
 
@@ -20,7 +20,7 @@ fn getcwd_should_return_cwd() {
     };
   });
   let state = create_state!("/test", getcwd_should_return_cwd_plugin);
-  *state.cwd.write().unwrap() = PlatformPathBuf::from("/getcwd");
-  let code = ptrace::attach(state.clone(), child).unwrap();
-  assert_eq!(code, 0);
+  *state.cwd.write().unwrap() = NativePathBuf::from("/getcwd");
+  let status = tracer::attach(state.clone(), child).unwrap();
+  assert_eq!(status, tracer::TraceeStatus::Exited(0));
 }
